@@ -1,7 +1,7 @@
 FROM python:3.9-slim
 
 LABEL maintainer="K8s Log Viewer"
-LABEL description="K8s日志查询系统 - 简化版"
+LABEL description="K8s日志查询系统 - 支持多架构(amd64/arm64)"
 
 # 设置工作目录
 WORKDIR /app
@@ -15,7 +15,17 @@ RUN apt-get update && \
 
 # 安装kubectl
 ARG KUBECTL_VERSION=v1.28.0
-RUN curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+ARG TARGETARCH
+RUN if [ -z "$TARGETARCH" ]; then \
+        TARGETARCH=$(uname -m); \
+        case $TARGETARCH in \
+            x86_64) TARGETARCH=amd64 ;; \
+            aarch64) TARGETARCH=arm64 ;; \
+            armv7l) TARGETARCH=arm ;; \
+        esac; \
+    fi && \
+    echo "Downloading kubectl for architecture: $TARGETARCH" && \
+    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/ && \
     kubectl version --client
@@ -27,11 +37,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
-COPY logs/ ./logs/
 
-# 创建日志目录
-RUN mkdir -p /app/logs && \
-    chmod 777 /app/logs
+# 创建必要的目录
+RUN mkdir -p /app/logs /app/files && \
+    chmod 777 /app/logs /app/files
 
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1
