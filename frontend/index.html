@@ -98,46 +98,49 @@
                         <div class="card-body">
                             <form id="error-context-form">
                                 <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Namespace</label>
-                                        <input type="text" class="form-control" id="ec-namespace"
-                                               placeholder="输入namespace" required>
+                                    <div class="col-md-4">
+                                        <label class="form-label">1. 选择Namespace</label>
+                                        <select class="form-select" id="ec-namespace" required>
+                                            <option value="">-- 请先加载 --</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" id="ec-load-ns-btn">
+                                            <i class="bi bi-arrow-repeat"></i> 加载命名空间
+                                        </button>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">查询方式</label>
+                                    <div class="col-md-4">
+                                        <label class="form-label">2. 查询方式</label>
                                         <select class="form-select" id="ec-query-type">
                                             <option value="deployment">整个部署单元 (Deployment/StatefulSet)</option>
                                             <option value="pod">单个Pod</option>
                                         </select>
                                     </div>
+                                    <div class="col-md-4" id="ec-deployment-group">
+                                        <label class="form-label">3. 选择部署单元</label>
+                                        <select class="form-select" id="ec-deployment" required>
+                                            <option value="">-- 请先选择namespace --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4" id="ec-pod-group" style="display: none;">
+                                        <label class="form-label">3. 选择Pod</label>
+                                        <select class="form-select" id="ec-pod" required>
+                                            <option value="">-- 请先选择namespace --</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <div class="row mb-3">
-                                    <div class="col-md-6" id="ec-deployment-group">
-                                        <label class="form-label">Deployment/StatefulSet名称</label>
-                                        <input type="text" class="form-control" id="ec-deployment"
-                                               placeholder="输入deployment或statefulset名称">
-                                    </div>
-                                    <div class="col-md-6" id="ec-pod-group" style="display: none;">
-                                        <label class="form-label">Pod名称</label>
-                                        <input type="text" class="form-control" id="ec-pod"
-                                               placeholder="输入pod名称">
-                                    </div>
                                     <div class="col-md-6">
                                         <label class="form-label">错误关键字 (逗号分隔)</label>
                                         <input type="text" class="form-control" id="ec-keywords"
                                                value="error,exception,fatal" placeholder="error,exception,fatal">
                                     </div>
-                                </div>
-
-                                <div class="row mb-3">
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <label class="form-label">上下文行数</label>
                                         <input type="number" class="form-control" id="ec-context-lines"
                                                value="50" min="10" max="200">
                                         <small class="form-text text-muted">错误前后各显示多少行</small>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <label class="form-label">日志类型</label>
                                         <select class="form-select" id="ec-log-type">
                                             <option value="all">全部 (Console + 文件)</option>
@@ -270,23 +273,28 @@
                         <div class="card-body">
                             <form id="batch-query-form">
                                 <div class="row mb-3">
-                                    <div class="col-md-8">
-                                        <label class="form-label">Namespace模式 (逗号分隔)</label>
-                                        <input type="text" class="form-control" id="batch-namespaces"
-                                               placeholder="如: erp-*,cnnc-*,ccs-*">
-                                        <div class="form-text">
+                                    <div class="col-md-6">
+                                        <label class="form-label">选择Namespace(s) (多选)</label>
+                                        <select class="form-select" id="batch-namespaces-select" multiple size="8" required>
+                                            <option value="">-- 请先加载 --</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" id="batch-load-ns-btn">
+                                            <i class="bi bi-arrow-repeat"></i> 加载所有命名空间
+                                        </button>
+                                        <div class="form-text mt-2">
                                             快速选择:
-                                            <span class="badge bg-secondary clickable" data-pattern="erp-*">erp-*</span>
-                                            <span class="badge bg-secondary clickable" data-pattern="cnnc-*">cnnc-*</span>
-                                            <span class="badge bg-secondary clickable" data-pattern="ccs-*">ccs-*</span>
-                                            <span class="badge bg-secondary clickable" data-pattern="erp-*,cnnc-*,ccs-*">全部</span>
+                                            <span class="badge bg-secondary clickable" data-pattern="erp-">erp-*</span>
+                                            <span class="badge bg-secondary clickable" data-pattern="cnnc-">cnnc-*</span>
+                                            <span class="badge bg-secondary clickable" data-pattern="ccs-">ccs-*</span>
+                                            <span class="badge bg-success clickable" id="batch-select-all">全选</span>
+                                            <span class="badge bg-warning clickable" id="batch-clear-all">清空</span>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-6">
                                         <label class="form-label">关键字 (逗号分隔)</label>
                                         <input type="text" class="form-control" id="batch-keywords"
                                                placeholder="如: HikariPool,timeout">
-                                        <div class="form-text">
+                                        <div class="form-text mt-2">
                                             常用:
                                             <span class="badge bg-info clickable" data-keyword="HikariPool">HikariPool</span>
                                             <span class="badge bg-info clickable" data-keyword="timeout">timeout</span>
@@ -392,14 +400,20 @@
                             <form id="download-form">
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label">Namespace</label>
-                                        <input type="text" class="form-control" id="download-namespace"
-                                               placeholder="输入namespace">
+                                        <label class="form-label">1. 选择Namespace</label>
+                                        <select class="form-select" id="download-namespace" required>
+                                            <option value="">-- 请先加载 --</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" id="download-load-ns-btn">
+                                            <i class="bi bi-arrow-repeat"></i> 加载命名空间
+                                        </button>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label">Pod名称 (逗号分隔)</label>
-                                        <input type="text" class="form-control" id="download-pods"
-                                               placeholder="如: pod-1,pod-2,pod-3">
+                                        <label class="form-label">2. 选择Pods (多选)</label>
+                                        <select class="form-select" id="download-pods" multiple size="6" required>
+                                            <option value="">-- 请先选择namespace --</option>
+                                        </select>
+                                        <small class="form-text text-muted">按住Ctrl或Cmd键多选</small>
                                     </div>
                                 </div>
 
@@ -442,15 +456,33 @@
                         <div class="card-body">
                             <form id="stats-form">
                                 <div class="row mb-3">
-                                    <div class="col-md-8">
-                                        <label class="form-label">Namespace模式</label>
-                                        <input type="text" class="form-control" id="stats-namespaces"
-                                               placeholder="如: erp-*,cnnc-*">
+                                    <div class="col-md-6">
+                                        <label class="form-label">选择Namespace(s) (多选)</label>
+                                        <select class="form-select" id="stats-namespaces-select" multiple size="8" required>
+                                            <option value="">-- 请先加载 --</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" id="stats-load-ns-btn">
+                                            <i class="bi bi-arrow-repeat"></i> 加载所有命名空间
+                                        </button>
+                                        <div class="form-text mt-2">
+                                            快速选择:
+                                            <span class="badge bg-secondary clickable" data-stats-pattern="erp-">erp-*</span>
+                                            <span class="badge bg-secondary clickable" data-stats-pattern="cnnc-">cnnc-*</span>
+                                            <span class="badge bg-secondary clickable" data-stats-pattern="ccs-">ccs-*</span>
+                                            <span class="badge bg-success clickable" id="stats-select-all">全选</span>
+                                            <span class="badge bg-warning clickable" id="stats-clear-all">清空</span>
+                                        </div>
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label">关键字</label>
+                                    <div class="col-md-6">
+                                        <label class="form-label">关键字 (逗号分隔)</label>
                                         <input type="text" class="form-control" id="stats-keywords"
                                                placeholder="如: error,timeout">
+                                        <div class="form-text mt-2">
+                                            常用:
+                                            <span class="badge bg-info clickable" data-stats-keyword="error">error</span>
+                                            <span class="badge bg-info clickable" data-stats-keyword="exception">exception</span>
+                                            <span class="badge bg-info clickable" data-stats-keyword="timeout">timeout</span>
+                                        </div>
                                     </div>
                                 </div>
 

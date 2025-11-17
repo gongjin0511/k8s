@@ -323,6 +323,36 @@ def get_pods_grouped():
         }), 500
 
 
+@app.route('/api/deployments', methods=['GET'])
+def get_deployments():
+    """
+    获取指定namespace的所有deployments和statefulsets
+    Query参数:
+      - namespace: 命名空间 (必需)
+    """
+    try:
+        namespace = request.args.get('namespace')
+        if not namespace:
+            return jsonify({
+                'success': False,
+                'error': 'namespace参数必需'
+            }), 400
+
+        deployments = kubectl.get_deployments(namespace)
+
+        return jsonify({
+            'success': True,
+            'data': deployments,
+            'count': len(deployments)
+        })
+    except Exception as e:
+        logger.error(f"获取deployments失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/deployment/pods', methods=['GET'])
 def get_deployment_pods():
     """

@@ -211,11 +211,37 @@ function quickViewPodLogs(namespace, pod) {
 // ========== 错误上下文查询 ==========
 
 function initErrorContext() {
+    // 加载命名空间按钮
+    document.getElementById('ec-load-ns-btn').addEventListener('click', loadECNamespaces);
+
+    // Namespace选择变化时加载deployments/pods
+    document.getElementById('ec-namespace').addEventListener('change', function() {
+        const namespace = this.value;
+        const queryType = document.getElementById('ec-query-type').value;
+        if (namespace) {
+            if (queryType === 'deployment') {
+                loadECDeployments(namespace);
+            } else {
+                loadECPods(namespace);
+            }
+        }
+    });
+
     // 查询类型切换
     document.getElementById('ec-query-type').addEventListener('change', function() {
         const isDeployment = this.value === 'deployment';
         document.getElementById('ec-deployment-group').style.display = isDeployment ? 'block' : 'none';
         document.getElementById('ec-pod-group').style.display = isDeployment ? 'none' : 'block';
+
+        // 重新加载对应的列表
+        const namespace = document.getElementById('ec-namespace').value;
+        if (namespace) {
+            if (isDeployment) {
+                loadECDeployments(namespace);
+            } else {
+                loadECPods(namespace);
+            }
+        }
     });
 
     // 表单提交
@@ -228,6 +254,61 @@ function initErrorContext() {
     document.getElementById('clear-ec-result').addEventListener('click', function() {
         document.getElementById('ec-result').style.display = 'none';
     });
+
+    // 页面加载时自动加载命名空间
+    setTimeout(loadECNamespaces, 500);
+}
+
+async function loadECNamespaces() {
+    try {
+        const response = await fetch(`${API_BASE}/namespaces`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('ec-namespace');
+            select.innerHTML = '<option value="">-- 请选择 --</option>' +
+                data.data.map(ns => `<option value="${ns}">${ns}</option>`).join('');
+            showToast('success', `加载了 ${data.count} 个命名空间`);
+        } else {
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
+}
+
+async function loadECDeployments(namespace) {
+    try {
+        const response = await fetch(`${API_BASE}/deployments?namespace=${encodeURIComponent(namespace)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('ec-deployment');
+            select.innerHTML = '<option value="">-- 请选择 --</option>' +
+                data.data.map(d => `<option value="${d.name}">${d.name} (${d.type}, ${d.replicas} replicas)</option>`).join('');
+        } else {
+            showToast('error', `加载deployment失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
+}
+
+async function loadECPods(namespace) {
+    try {
+        const response = await fetch(`${API_BASE}/pods?namespace=${encodeURIComponent(namespace)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('ec-pod');
+            select.innerHTML = '<option value="">-- 请选择 --</option>' +
+                data.data.map(p => `<option value="${p.name}">${p.name} (${p.status})</option>`).join('');
+        } else {
+            showToast('error', `加载pods失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
 }
 
 async function queryErrorContext() {
@@ -668,11 +749,32 @@ function exportSingleResult() {
 // ========== 批量查询 ==========
 
 function initBatchQuery() {
-    // 快速选择pattern
+    // 加载命名空间按钮
+    document.getElementById('batch-load-ns-btn').addEventListener('click', loadBatchNamespaces);
+
+    // 快速选择pattern - 选择以特定前缀开头的namespace
     document.querySelectorAll('[data-pattern]').forEach(badge => {
         badge.addEventListener('click', function() {
-            document.getElementById('batch-namespaces').value = this.getAttribute('data-pattern');
+            const pattern = this.getAttribute('data-pattern');
+            const select = document.getElementById('batch-namespaces-select');
+            Array.from(select.options).forEach(opt => {
+                if (opt.value.startsWith(pattern)) {
+                    opt.selected = true;
+                }
+            });
         });
+    });
+
+    // 全选
+    document.getElementById('batch-select-all').addEventListener('click', function() {
+        const select = document.getElementById('batch-namespaces-select');
+        Array.from(select.options).forEach(opt => opt.selected = true);
+    });
+
+    // 清空选择
+    document.getElementById('batch-clear-all').addEventListener('click', function() {
+        const select = document.getElementById('batch-namespaces-select');
+        Array.from(select.options).forEach(opt => opt.selected = false);
     });
 
     // 快速选择关键字
@@ -700,21 +802,41 @@ function initBatchQuery() {
         document.getElementById('batch-query-result').style.display = 'none';
         appState.batchResults = [];
     });
+
+    // 页面加载时自动加载命名空间
+    setTimeout(loadBatchNamespaces, 500);
+}
+
+async function loadBatchNamespaces() {
+    try {
+        const response = await fetch(`${API_BASE}/namespaces`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('batch-namespaces-select');
+            select.innerHTML = data.data.map(ns => `<option value="${ns}">${ns}</option>`).join('');
+            showToast('success', `加载了 ${data.count} 个命名空间`);
+        } else {
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
 }
 
 async function batchQueryLogs() {
-    const namespacesStr = document.getElementById('batch-namespaces').value;
+    const select = document.getElementById('batch-namespaces-select');
+    const selectedNamespaces = Array.from(select.selectedOptions).map(opt => opt.value);
     const keywordsStr = document.getElementById('batch-keywords').value;
     const logType = document.getElementById('batch-log-type').value;
     const tail = parseInt(document.getElementById('batch-tail').value);
     const maxPods = parseInt(document.getElementById('batch-max-pods').value);
 
-    if (!namespacesStr) {
-        showToast('warning', '请输入namespace模式');
+    if (selectedNamespaces.length === 0) {
+        showToast('warning', '请选择至少一个namespace');
         return;
     }
 
-    const namespaces = namespacesStr.split(',').map(n => n.trim()).filter(n => n);
     const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : [];
 
     // 显示进度
@@ -726,7 +848,7 @@ async function batchQueryLogs() {
         const response = await fetch(`${API_BASE}/logs/batch-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ namespaces, keywords, tail, type: logType, max_pods: maxPods })
+            body: JSON.stringify({ namespaces: selectedNamespaces, keywords, tail, type: logType, max_pods: maxPods })
         });
 
         const data = await response.json();
@@ -860,21 +982,33 @@ function highlightBatchLogs(lines) {
 // ========== 日志下载 ==========
 
 function initDownload() {
+    // 加载命名空间按钮
+    document.getElementById('download-load-ns-btn').addEventListener('click', loadDownloadNamespaces);
+
+    // Namespace选择变化时加载pods
+    document.getElementById('download-namespace').addEventListener('change', function() {
+        const namespace = this.value;
+        if (namespace) {
+            loadDownloadPods(namespace);
+        }
+    });
+
+    // 表单提交
     document.getElementById('download-form').addEventListener('submit', async function(e) {
         e.preventDefault();
 
         const namespace = document.getElementById('download-namespace').value;
-        const podsStr = document.getElementById('download-pods').value;
+        const podSelect = document.getElementById('download-pods');
+        const selectedPods = Array.from(podSelect.selectedOptions).map(opt => opt.value);
         const logType = document.getElementById('download-log-type').value;
         const tail = parseInt(document.getElementById('download-tail').value);
         const keywordsStr = document.getElementById('download-keywords').value;
 
-        if (!namespace || !podsStr) {
-            showToast('warning', '请输入namespace和pod名称');
+        if (!namespace || selectedPods.length === 0) {
+            showToast('warning', '请选择namespace和至少一个pod');
             return;
         }
 
-        const pods = podsStr.split(',').map(p => p.trim()).filter(p => p);
         const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : [];
 
         // 显示下载状态
@@ -886,7 +1020,7 @@ function initDownload() {
             const response = await fetch(`${API_BASE}/logs/download`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ namespace, pods, type: logType, tail, keywords, format: 'zip' })
+                body: JSON.stringify({ namespace, pods: selectedPods, type: logType, tail, keywords, format: 'zip' })
             });
 
             if (response.ok) {
@@ -910,27 +1044,128 @@ function initDownload() {
             statusEl.textContent = `下载失败: ${error.message}`;
         }
     });
+
+    // 页面加载时自动加载命名空间
+    setTimeout(loadDownloadNamespaces, 500);
+}
+
+async function loadDownloadNamespaces() {
+    try {
+        const response = await fetch(`${API_BASE}/namespaces`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('download-namespace');
+            select.innerHTML = '<option value="">-- 请选择 --</option>' +
+                data.data.map(ns => `<option value="${ns}">${ns}</option>`).join('');
+            showToast('success', `加载了 ${data.count} 个命名空间`);
+        } else {
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
+}
+
+async function loadDownloadPods(namespace) {
+    try {
+        const response = await fetch(`${API_BASE}/pods?namespace=${encodeURIComponent(namespace)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('download-pods');
+            select.innerHTML = data.data.map(p =>
+                `<option value="${p.name}">${p.name} (${p.status})</option>`
+            ).join('');
+        } else {
+            showToast('error', `加载pods失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
 }
 
 // ========== 统计分析 ==========
 
 function initStats() {
+    // 加载命名空间按钮
+    document.getElementById('stats-load-ns-btn').addEventListener('click', loadStatsNamespaces);
+
+    // 快速选择pattern
+    document.querySelectorAll('[data-stats-pattern]').forEach(badge => {
+        badge.addEventListener('click', function() {
+            const pattern = this.getAttribute('data-stats-pattern');
+            const select = document.getElementById('stats-namespaces-select');
+            Array.from(select.options).forEach(opt => {
+                if (opt.value.startsWith(pattern)) {
+                    opt.selected = true;
+                }
+            });
+        });
+    });
+
+    // 全选
+    document.getElementById('stats-select-all').addEventListener('click', function() {
+        const select = document.getElementById('stats-namespaces-select');
+        Array.from(select.options).forEach(opt => opt.selected = true);
+    });
+
+    // 清空选择
+    document.getElementById('stats-clear-all').addEventListener('click', function() {
+        const select = document.getElementById('stats-namespaces-select');
+        Array.from(select.options).forEach(opt => opt.selected = false);
+    });
+
+    // 快速选择关键字
+    document.querySelectorAll('[data-stats-keyword]').forEach(badge => {
+        badge.addEventListener('click', function() {
+            const input = document.getElementById('stats-keywords');
+            const keyword = this.getAttribute('data-stats-keyword');
+            const current = input.value;
+            if (current) {
+                input.value = current + ',' + keyword;
+            } else {
+                input.value = keyword;
+            }
+        });
+    });
+
     document.getElementById('stats-form').addEventListener('submit', function(e) {
         e.preventDefault();
         generateStats();
     });
+
+    // 页面加载时自动加载命名空间
+    setTimeout(loadStatsNamespaces, 500);
+}
+
+async function loadStatsNamespaces() {
+    try {
+        const response = await fetch(`${API_BASE}/namespaces`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('stats-namespaces-select');
+            select.innerHTML = data.data.map(ns => `<option value="${ns}">${ns}</option>`).join('');
+            showToast('success', `加载了 ${data.count} 个命名空间`);
+        } else {
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
 }
 
 async function generateStats() {
-    const namespacesStr = document.getElementById('stats-namespaces').value;
+    const select = document.getElementById('stats-namespaces-select');
+    const selectedNamespaces = Array.from(select.selectedOptions).map(opt => opt.value);
     const keywordsStr = document.getElementById('stats-keywords').value;
 
-    if (!namespacesStr || !keywordsStr) {
-        showToast('warning', '请输入namespace模式和关键字');
+    if (selectedNamespaces.length === 0 || !keywordsStr) {
+        showToast('warning', '请选择至少一个namespace并输入关键字');
         return;
     }
 
-    const namespaces = namespacesStr.split(',').map(n => n.trim()).filter(n => n);
     const keywords = keywordsStr.split(',').map(k => k.trim()).filter(k => k);
 
     // 显示加载状态
@@ -941,7 +1176,7 @@ async function generateStats() {
         const response = await fetch(`${API_BASE}/stats`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ namespaces, keywords })
+            body: JSON.stringify({ namespaces: selectedNamespaces, keywords })
         });
 
         const result = await response.json();

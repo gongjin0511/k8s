@@ -326,6 +326,49 @@ class KubectlHelper:
         logger.info(f"按命名空间分组获取Pods: {len(grouped_pods)}个命名空间")
         return grouped_pods
 
+    def get_deployments(self, namespace: str) -> List[Dict]:
+        """
+        获取指定namespace的所有deployments和statefulsets
+        :param namespace: namespace名称
+        :return: 部署单元列表 [{'name': str, 'type': str, 'replicas': int}]
+        """
+        deployments = []
+
+        # 获取Deployments
+        result = self.run_kubectl(['get', 'deployments', '-n', namespace, '-o', 'json'])
+        if result['success']:
+            try:
+                data = json.loads(result['stdout'])
+                for item in data.get('items', []):
+                    name = item['metadata']['name']
+                    replicas = item['spec'].get('replicas', 0)
+                    deployments.append({
+                        'name': name,
+                        'type': 'deployment',
+                        'replicas': replicas
+                    })
+            except json.JSONDecodeError:
+                pass
+
+        # 获取StatefulSets
+        result = self.run_kubectl(['get', 'statefulsets', '-n', namespace, '-o', 'json'])
+        if result['success']:
+            try:
+                data = json.loads(result['stdout'])
+                for item in data.get('items', []):
+                    name = item['metadata']['name']
+                    replicas = item['spec'].get('replicas', 0)
+                    deployments.append({
+                        'name': name,
+                        'type': 'statefulset',
+                        'replicas': replicas
+                    })
+            except json.JSONDecodeError:
+                pass
+
+        logger.info(f"在namespace [{namespace}] 中找到 {len(deployments)} 个部署单元")
+        return deployments
+
     def get_deployment_pods(self, namespace: str, deployment: str) -> List[str]:
         """
         获取Deployment/StatefulSet的所有Pod
