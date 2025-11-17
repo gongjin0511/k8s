@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K8s日志查询系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-cloud-arrow-down"></i>
+                K8s日志查询系统
+            </span>
+            <span class="text-white">
+                <i class="bi bi-heart-pulse"></i>
+                <span id="health-status">检查中...</span>
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <div class="col-md-2 bg-light sidebar">
+                <div class="list-group list-group-flush">
+                    <a href="#" class="list-group-item list-group-item-action active" data-view="single-query">
+                        <i class="bi bi-search"></i> 单Pod查询
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="batch-query">
+                        <i class="bi bi-collection"></i> 批量查询
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="download">
+                        <i class="bi bi-download"></i> 日志下载
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="stats">
+                        <i class="bi bi-bar-chart"></i> 统计分析
+                    </a>
+                </div>
+            </div>
+
+            <!-- 主内容区 -->
+            <div class="col-md-10 main-content">
+                <!-- 单Pod查询 -->
+                <div id="single-query-view" class="view-container">
+                    <h3 class="mb-4">单Pod日志查询</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="single-query-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Namespace</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="single-namespace-input"
+                                                   placeholder="输入namespace或使用通配符 (如: erp-*)">
+                                            <button class="btn btn-outline-secondary" type="button" id="load-namespaces-btn">
+                                                <i class="bi bi-arrow-repeat"></i> 加载
+                                            </button>
+                                        </div>
+                                        <select class="form-select mt-2" id="single-namespace-select" size="5">
+                                            <option value="">-- 加载namespace列表 --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Pod</label>
+                                        <button class="btn btn-outline-secondary btn-sm float-end" type="button" id="load-pods-btn">
+                                            <i class="bi bi-arrow-repeat"></i> 加载Pods
+                                        </button>
+                                        <select class="form-select" id="single-pod-select" size="6">
+                                            <option value="">-- 请先选择namespace --</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">日志类型</label>
+                                        <select class="form-select" id="single-log-type">
+                                            <option value="all">全部 (Console + 文件)</option>
+                                            <option value="console">仅Console日志</option>
+                                            <option value="file">仅文件日志</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">行数</label>
+                                        <input type="number" class="form-control" id="single-tail"
+                                               value="2000" min="100" max="10000">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">关键字 (逗号分隔)</label>
+                                        <input type="text" class="form-control" id="single-keywords"
+                                               placeholder="如: HikariPool,timeout,error">
+                                    </div>
+                                </div>
+
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-search"></i> 查询日志
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" id="clear-single-result">
+                                        <i class="bi bi-trash"></i> 清空结果
+                                    </button>
+                                    <button type="button" class="btn btn-success" id="export-single-result" disabled>
+                                        <i class="bi bi-file-earmark-arrow-down"></i> 导出结果
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 查询结果 -->
+                    <div id="single-query-result" class="result-container" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-success text-white">
+                                <h5 class="mb-0">查询结果</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="single-result-content"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 加载中提示 -->
+                    <div id="single-query-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">加载中...</span>
+                        </div>
+                        <p class="mt-2">正在查询日志，请稍候...</p>
+                    </div>
+                </div>
+
+                <!-- 批量查询 -->
+                <div id="batch-query-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">批量日志查询</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="batch-query-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-8">
+                                        <label class="form-label">Namespace模式 (逗号分隔)</label>
+                                        <input type="text" class="form-control" id="batch-namespaces"
+                                               placeholder="如: erp-*,cnnc-*,ccs-*">
+                                        <div class="form-text">
+                                            快速选择:
+                                            <span class="badge bg-secondary clickable" data-pattern="erp-*">erp-*</span>
+                                            <span class="badge bg-secondary clickable" data-pattern="cnnc-*">cnnc-*</span>
+                                            <span class="badge bg-secondary clickable" data-pattern="ccs-*">ccs-*</span>
+                                            <span class="badge bg-secondary clickable" data-pattern="erp-*,cnnc-*,ccs-*">全部</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">关键字 (逗号分隔)</label>
+                                        <input type="text" class="form-control" id="batch-keywords"
+                                               placeholder="如: HikariPool,timeout">
+                                        <div class="form-text">
+                                            常用:
+                                            <span class="badge bg-info clickable" data-keyword="HikariPool">HikariPool</span>
+                                            <span class="badge bg-info clickable" data-keyword="timeout">timeout</span>
+                                            <span class="badge bg-info clickable" data-keyword="error">error</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">日志类型</label>
+                                        <select class="form-select" id="batch-log-type">
+                                            <option value="all">全部</option>
+                                            <option value="console">仅Console</option>
+                                            <option value="file">仅文件</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">每个Pod行数</label>
+                                        <input type="number" class="form-control" id="batch-tail"
+                                               value="2000" min="100" max="10000">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">最大查询Pod数</label>
+                                        <input type="number" class="form-control" id="batch-max-pods"
+                                               value="100" min="1" max="100">
+                                    </div>
+                                </div>
+
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-play-circle"></i> 开始批量查询
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" id="clear-batch-result">
+                                        <i class="bi bi-trash"></i> 清空结果
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 查询进度 -->
+                    <div id="batch-query-progress" class="alert alert-info" style="display: none;">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-3" role="status"></div>
+                            <div class="flex-grow-1">
+                                <strong>查询进度:</strong> <span id="batch-progress-text">准备中...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 批量查询结果 -->
+                    <div id="batch-query-result" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-success text-white">
+                                <h5 class="mb-0">
+                                    批量查询结果
+                                    <span class="badge bg-light text-dark" id="batch-result-summary"></span>
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover" id="batch-result-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Namespace</th>
+                                                <th>Pod</th>
+                                                <th>Console匹配</th>
+                                                <th>文件匹配</th>
+                                                <th>总匹配</th>
+                                                <th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 详细日志查看Modal -->
+                        <div class="modal fade" id="log-detail-modal" tabindex="-1">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title" id="log-detail-title">日志详情</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div id="log-detail-content"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 日志下载 -->
+                <div id="download-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">日志下载</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="download-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Namespace</label>
+                                        <input type="text" class="form-control" id="download-namespace"
+                                               placeholder="输入namespace">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Pod名称 (逗号分隔)</label>
+                                        <input type="text" class="form-control" id="download-pods"
+                                               placeholder="如: pod-1,pod-2,pod-3">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">日志类型</label>
+                                        <select class="form-select" id="download-log-type">
+                                            <option value="all">全部</option>
+                                            <option value="console">仅Console</option>
+                                            <option value="file">仅文件</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">行数</label>
+                                        <input type="number" class="form-control" id="download-tail"
+                                               value="2000" min="100" max="10000">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">关键字过滤 (可选)</label>
+                                        <input type="text" class="form-control" id="download-keywords"
+                                               placeholder="如: error,timeout">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-success">
+                                    <i class="bi bi-download"></i> 下载日志ZIP
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="download-status" class="alert alert-info" style="display: none;"></div>
+                </div>
+
+                <!-- 统计分析 -->
+                <div id="stats-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">统计分析</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="stats-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-8">
+                                        <label class="form-label">Namespace模式</label>
+                                        <input type="text" class="form-control" id="stats-namespaces"
+                                               placeholder="如: erp-*,cnnc-*">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">关键字</label>
+                                        <input type="text" class="form-control" id="stats-keywords"
+                                               placeholder="如: error,timeout">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-calculator"></i> 生成统计
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="stats-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">正在统计分析...</p>
+                    </div>
+
+                    <div id="stats-result" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">总Pod数</h6>
+                                        <h2 class="text-primary" id="stats-total-pods">0</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">匹配Pod数</h6>
+                                        <h2 class="text-success" id="stats-matched-pods">0</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">匹配日志数</h6>
+                                        <h2 class="text-warning" id="stats-total-matches">0</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">匹配率</h6>
+                                        <h2 class="text-info" id="stats-match-rate">0%</h2>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-4">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>各Namespace分布</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm" id="stats-namespace-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Namespace</th>
+                                                    <th>匹配数</th>
+                                                    <th>占比</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Top 10 错误Pod</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm" id="stats-top-pods-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>排名</th>
+                                                    <th>Namespace</th>
+                                                    <th>Pod</th>
+                                                    <th>匹配数</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

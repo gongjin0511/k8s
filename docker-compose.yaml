@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  k8s-log-viewer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: k8s-log-viewer:latest
+    container_name: k8s-log-viewer
+    ports:
+      - "5000:5000"
+    volumes:
+      # 挂载kubeconfig (只读)
+      - ~/.kube:/root/.kube:ro
+      # 可选: 挂载日志目录到主机
+      # - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - k8s-log-viewer-net
+
+networks:
+  k8s-log-viewer-net:
+    driver: bridge

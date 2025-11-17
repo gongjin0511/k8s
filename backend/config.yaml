@@ -1,0 +1,81 @@
+# K8s日志查询系统配置文件
+
+# 查询限制
+limits:
+  # 单次查询最大行数
+  max_tail_lines: 10000
+
+  # 批量查询最大Pod数
+  max_batch_pods: 100
+
+  # 下载文件最大大小 (MB)
+  max_download_size_mb: 100
+
+  # 查询超时时间 (秒)
+  query_timeout_seconds: 300
+
+# 日志配置
+logging:
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+
+  # 日志格式
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# kubectl配置
+kubectl:
+  # kubectl命令路径 (默认从PATH查找)
+  command: kubectl
+
+  # 默认超时时间 (秒)
+  default_timeout: 300
+
+  # 日志文件目录 (Pod内)
+  log_directory: /applog
+
+  # 日志文件名模式
+  log_file_pattern: root.log
+
+# Flask配置
+flask:
+  # 主机地址
+  host: 0.0.0.0
+
+  # 端口
+  port: 5000
+
+  # 调试模式
+  debug: false
+
+  # 线程模式
+  threaded: true
+
+# 缓存配置 (未来扩展)
+cache:
+  # 是否启用缓存
+  enabled: false
+
+  # 缓存过期时间 (秒)
+  ttl: 300
+
+# 安全配置
+security:
+  # 允许的namespace模式 (空表示全部允许)
+  allowed_namespace_patterns: []
+
+  # 禁止的namespace
+  forbidden_namespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+
+  # 是否允许执行pod exec命令
+  allow_pod_exec: true
+
+# 性能配置
+performance:
+  # 并发查询最大数
+  max_concurrent_queries: 10
+
+  # 每个Pod查询的默认行数
+  default_tail_lines: 2000

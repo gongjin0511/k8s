@@ -1,0 +1,184 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-log-viewer
+
+---
+# ServiceAccount - 用于访问K8s API
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-log-viewer
+  namespace: k8s-log-viewer
+
+---
+# ClusterRole - 定义权限
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-log-viewer
+rules:
+  # 查看namespaces
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+
+  # 查看pods
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+  # 查看pod logs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+  # 在pod中执行命令 (用于读取日志文件)
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+
+---
+# ClusterRoleBinding - 绑定ServiceAccount和ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-log-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-log-viewer
+subjects:
+  - kind: ServiceAccount
+    name: k8s-log-viewer
+    namespace: k8s-log-viewer
+
+---
+# ConfigMap - 配置文件 (可选)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-log-viewer-config
+  namespace: k8s-log-viewer
+data:
+  config.yaml: |
+    # K8s日志查询系统配置
+    max_tail_lines: 10000
+    max_batch_pods: 100
+    max_download_size_mb: 100
+    query_timeout_seconds: 300
+    default_log_dir: /applog
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-log-viewer
+  namespace: k8s-log-viewer
+  labels:
+    app: k8s-log-viewer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-log-viewer
+  template:
+    metadata:
+      labels:
+        app: k8s-log-viewer
+    spec:
+      serviceAccountName: k8s-log-viewer
+      containers:
+        - name: k8s-log-viewer
+          image: k8s-log-viewer:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+              name: http
+              protocol: TCP
+          env:
+            - name: FLASK_ENV
+              value: "production"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: logs
+          emptyDir: {}
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-log-viewer
+  namespace: k8s-log-viewer
+  labels:
+    app: k8s-log-viewer
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 5000
+      protocol: TCP
+      name: http
+  selector:
+    app: k8s-log-viewer
+
+---
+# Ingress (可选 - 根据集群的Ingress Controller配置)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: k8s-log-viewer
+  namespace: k8s-log-viewer
+  annotations:
+    # 根据你的Ingress Controller修改这些注解
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx  # 根据你的Ingress Controller修改
+  rules:
+    - host: k8s-logs.example.com  # 修改为你的域名
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: k8s-log-viewer
+                port:
+                  number: 80
+  # TLS配置 (可选)
+  # tls:
+  #   - hosts:
+  #       - k8s-logs.example.com
+  #     secretName: k8s-log-viewer-tls

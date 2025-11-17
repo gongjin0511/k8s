@@ -1,0 +1,322 @@
+/* 全局样式 */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f5f5;
+}
+
+/* 侧边栏 */
+.sidebar {
+    min-height: calc(100vh - 56px);
+    padding-top: 20px;
+}
+
+.sidebar .list-group-item {
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+}
+
+.sidebar .list-group-item:hover {
+    background-color: #e9ecef;
+}
+
+.sidebar .list-group-item.active {
+    background-color: #0d6efd;
+    color: white;
+}
+
+/* 主内容区 */
+.main-content {
+    padding: 30px;
+}
+
+/* 查看容器 */
+.view-container {
+    animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* 结果容器 */
+.result-container {
+    margin-top: 20px;
+    animation: slideDown 0.3s;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 日志显示区域 */
+.log-viewer {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    padding: 15px;
+    border-radius: 5px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    max-height: 600px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.log-line {
+    padding: 2px 0;
+    border-bottom: 1px solid #2d2d2d;
+}
+
+.log-line:hover {
+    background-color: #2d2d2d;
+}
+
+/* 关键字高亮 */
+.keyword-highlight {
+    background-color: #ffd700;
+    color: #000;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+/* 错误高亮 */
+.error-highlight {
+    background-color: #ff4444;
+    color: #fff;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+/* 警告高亮 */
+.warning-highlight {
+    background-color: #ff9800;
+    color: #000;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+/* 可点击的badge */
+.clickable {
+    cursor: pointer;
+    margin-right: 5px;
+}
+
+.clickable:hover {
+    opacity: 0.8;
+    transform: scale(1.05);
+}
+
+/* 表格样式 */
+.table-hover tbody tr:hover {
+    background-color: #f0f8ff;
+    cursor: pointer;
+}
+
+/* 统计卡片 */
+.stats-card {
+    transition: transform 0.2s;
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* 进度条 */
+.progress-container {
+    margin: 20px 0;
+}
+
+/* 加载状态 */
+.spinner-border-sm {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* 日志类型标签 */
+.log-type-badge {
+    font-size: 0.8em;
+    margin-left: 5px;
+}
+
+/* 展开按钮 */
+.expand-btn {
+    transition: transform 0.2s;
+}
+
+.expand-btn:hover {
+    transform: scale(1.1);
+}
+
+/* 搜索框 */
+.search-box {
+    border: 2px solid #dee2e6;
+    transition: border-color 0.3s;
+}
+
+.search-box:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13,110,253,.25);
+}
+
+/* 空状态 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+/* 成功消息 */
+.success-message {
+    animation: fadeInOut 3s;
+}
+
+@keyframes fadeInOut {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .sidebar {
+        min-height: auto;
+        padding-top: 10px;
+    }
+
+    .main-content {
+        padding: 15px;
+    }
+
+    .log-viewer {
+        font-size: 11px;
+        max-height: 400px;
+    }
+}
+
+/* 滚动条样式 */
+.log-viewer::-webkit-scrollbar {
+    width: 10px;
+}
+
+.log-viewer::-webkit-scrollbar-track {
+    background: #2d2d2d;
+}
+
+.log-viewer::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 5px;
+}
+
+.log-viewer::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+/* 选择框样式 */
+select[size] {
+    min-height: 150px;
+}
+
+select option:hover {
+    background-color: #0d6efd;
+    color: white;
+}
+
+/* 表单标签 */
+.form-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+/* 卡片头部 */
+.card-header {
+    font-weight: 600;
+}
+
+/* 统计数字 */
+.stats-number {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+/* 日志文件路径 */
+.log-filepath {
+    color: #28a745;
+    font-weight: 600;
+    margin-top: 15px;
+    margin-bottom: 5px;
+}
+
+/* 日志统计信息 */
+.log-stats {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+
+/* 健康状态 */
+#health-status {
+    font-size: 0.9em;
+}
+
+.health-ok {
+    color: #90ee90;
+}
+
+.health-error {
+    color: #ff6b6b;
+}
+
+/* 模态框日志查看器 */
+.modal-body .log-viewer {
+    max-height: 70vh;
+}
+
+/* 按钮组 */
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* 表格紧凑模式 */
+.table-sm th,
+.table-sm td {
+    padding: 0.5rem;
+}
+
+/* 图表容器 */
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin-top: 20px;
+}
+
+/* 徽章 */
+.badge {
+    font-weight: 500;
+}
+
+/* 分隔线 */
+.section-divider {
+    border-top: 2px solid #dee2e6;
+    margin: 30px 0;
+}
