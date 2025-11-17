@@ -51,10 +51,20 @@ docker buildx build \
 
 ```bash
 # 在 ARM64 机器上（如 Apple Silicon Mac, 树莓派 4, AWS Graviton）
+# 方式1: 自动检测（推荐）
+docker build --platform linux/arm64 -t k8s-log-viewer:latest .
+
+# 方式2: 不指定平台（可能会有问题）
 docker build -t k8s-log-viewer:latest .
 
 # Dockerfile 会自动检测架构并下载对应的 kubectl
+# 构建时会输出: "Detected architecture: aarch64"
+# 和: "Downloading kubectl for architecture: arm64"
 ```
+
+**重要提示**：
+- 如果你在 aarch64 机器上构建但下载了 amd64 的 kubectl，请明确使用 `--platform linux/arm64` 参数
+- 这通常发生在 Docker Desktop 或某些配置默认使用 amd64 模拟的情况下
 
 ## 架构检测机制
 
@@ -84,7 +94,25 @@ docker run --rm k8s-log-viewer:latest kubectl version --client
 
 ## 常见问题
 
-### Q1: 构建时提示 "exec format error"
+### Q1: 在 aarch64 机器上构建但下载了 amd64 的 kubectl
+
+**原因**: Docker 可能默认使用了 amd64 模拟，或者拉取了错误架构的基础镜像
+
+**解决**:
+```bash
+# 方法1: 明确指定平台（推荐）
+docker build --platform linux/arm64 -t k8s-log-viewer:latest .
+
+# 方法2: 检查 Docker 默认平台
+docker version --format '{{.Server.Arch}}'
+
+# 方法3: 检查构建日志，确认检测到的架构
+# 构建时应该看到：
+# "Detected architecture: aarch64"
+# "Downloading kubectl for architecture: arm64"
+```
+
+### Q2: 构建时提示 "exec format error"
 
 **原因**: 尝试在不兼容的架构上运行镜像
 
@@ -94,7 +122,7 @@ docker run --rm k8s-log-viewer:latest kubectl version --client
 docker build --platform linux/arm64 -t k8s-log-viewer:latest .
 ```
 
-### Q2: kubectl 下载失败
+### Q3: kubectl 下载失败
 
 **原因**: 网络问题或架构不支持
 
@@ -110,15 +138,18 @@ docker build --build-arg HTTP_PROXY=http://proxy:port -t k8s-log-viewer:latest .
 docker build --build-arg KUBECTL_VERSION=v1.29.0 -t k8s-log-viewer:latest .
 ```
 
-### Q3: 在 Apple Silicon Mac 上构建
+### Q4: 在 Apple Silicon Mac 上构建
 
 ```bash
-# Apple Silicon (M1/M2/M3) 是 ARM64 架构
-# 可以直接构建
-docker build -t k8s-log-viewer:latest .
+# Apple Silicon (M1/M2/M3/M4) 是 ARM64 架构
+# 推荐明确指定平台
+docker build --platform linux/arm64 -t k8s-log-viewer:latest .
 
-# 或使用 buildx 明确指定
+# 或使用 buildx
 docker buildx build --platform linux/arm64 -t k8s-log-viewer:latest --load .
+
+# 如果遇到架构问题，检查 Docker Desktop 的设置
+# Settings -> Features in development -> Use Rosetta for x86/amd64 emulation (应关闭)
 ```
 
 ## 构建参数

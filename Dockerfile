@@ -16,12 +16,18 @@ RUN apt-get update && \
 # 安装kubectl
 ARG KUBECTL_VERSION=v1.28.0
 ARG TARGETARCH
-RUN if [ -z "$TARGETARCH" ]; then \
-        TARGETARCH=$(uname -m); \
-        case $TARGETARCH in \
+
+# 检测架构并下载对应的kubectl
+RUN set -ex && \
+    # 如果TARGETARCH未设置（非buildx构建），则检测当前架构
+    if [ -z "$TARGETARCH" ]; then \
+        ARCH=$(uname -m); \
+        echo "Detected architecture: $ARCH"; \
+        case $ARCH in \
             x86_64) TARGETARCH=amd64 ;; \
             aarch64) TARGETARCH=arm64 ;; \
             armv7l) TARGETARCH=arm ;; \
+            *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
         esac; \
     fi && \
     echo "Downloading kubectl for architecture: $TARGETARCH" && \
