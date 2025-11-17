@@ -2,9 +2,10 @@
 K8s日志查询系统 - Flask API服务
 """
 
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, session
 from flask_cors import CORS
 from kubectl_helper import KubectlHelper
+from functools import wraps
 import os
 import json
 import logging
@@ -22,10 +23,14 @@ logger = logging.getLogger(__name__)
 
 # 创建Flask应用
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
-CORS(app)  # 允许跨域请求
+app.secret_key = 'k8s-log-viewer-secret-key-2025'  # 用于session加密
+CORS(app, supports_credentials=True)  # 允许跨域请求，支持凭证
 
 # 初始化kubectl helper
 kubectl = KubectlHelper(timeout=300)
+
+# 登录密码配置
+LOGIN_PASSWORD = os.getenv('LOGIN_PASSWORD', 'Cnnc@2025')
 
 # 配置
 LOGS_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
@@ -37,10 +42,81 @@ MAX_BATCH_PODS = 100
 MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024  # 100MB
 
 
+# 登录验证装饰器
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            return jsonify({
+                'success': False,
+                'error': '未登录或登录已过期',
+                'requires_login': True
+            }), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 @app.route('/')
 def index():
     """主页面"""
+    return send_from_directory(app.static_folder, 'login.html')
+
+
+@app.route('/app')
+def app_page():
+    """应用主页（需要登录）"""
+    if not session.get('logged_in'):
+        return send_from_directory(app.static_folder, 'login.html')
     return send_from_directory(app.static_folder, 'index.html')
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """登录接口"""
+    try:
+        data = request.get_json()
+        password = data.get('password', '')
+
+        if password == LOGIN_PASSWORD:
+            session['logged_in'] = True
+            session.permanent = True
+            logger.info(f"用户登录成功 - IP: {request.remote_addr}")
+            return jsonify({
+                'success': True,
+                'message': '登录成功'
+            })
+        else:
+            logger.warning(f"登录失败 - IP: {request.remote_addr}")
+            return jsonify({
+                'success': False,
+                'error': '密码错误'
+            }), 401
+    except Exception as e:
+        logger.error(f"登录异常: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    """登出接口"""
+    session.clear()
+    logger.info(f"用户登出 - IP: {request.remote_addr}")
+    return jsonify({
+        'success': True,
+        'message': '已登出'
+    })
+
+
+@app.route('/api/check-auth', methods=['GET'])
+def check_auth():
+    """检查登录状态"""
+    return jsonify({
+        'success': True,
+        'logged_in': session.get('logged_in', False)
+    })
 
 
 @app.route('/api/health')
@@ -54,6 +130,7 @@ def health_check():
 
 
 @app.route('/api/namespaces', methods=['GET'])
+@login_required
 def get_namespaces():
     """
     获取namespace列表
@@ -80,6 +157,7 @@ def get_namespaces():
 
 
 @app.route('/api/pods', methods=['GET'])
+@login_required
 def get_pods():
     """
     获取pod列表
@@ -112,6 +190,7 @@ def get_pods():
 
 
 @app.route('/api/logs/query', methods=['POST'])
+@login_required
 def query_logs():
     """
     查询单个Pod日志
@@ -168,6 +247,7 @@ def query_logs():
 
 
 @app.route('/api/logs/batch-query', methods=['POST'])
+@login_required
 def batch_query_logs():
     """
     批量查询日志
@@ -224,6 +304,7 @@ def batch_query_logs():
 
 
 @app.route('/api/logs/download', methods=['POST'])
+@login_required
 def download_logs():
     """
     下载日志
@@ -298,6 +379,7 @@ def download_logs():
 
 
 @app.route('/api/pods/grouped', methods=['GET'])
+@login_required
 def get_pods_grouped():
     """
     按命名空间分组获取Pods
@@ -324,6 +406,7 @@ def get_pods_grouped():
 
 
 @app.route('/api/deployments', methods=['GET'])
+@login_required
 def get_deployments():
     """
     获取指定namespace的所有deployments和statefulsets
@@ -354,6 +437,7 @@ def get_deployments():
 
 
 @app.route('/api/deployment/pods', methods=['GET'])
+@login_required
 def get_deployment_pods():
     """
     获取Deployment/StatefulSet的所有Pods
@@ -387,6 +471,7 @@ def get_deployment_pods():
 
 
 @app.route('/api/logs/error-context', methods=['POST'])
+@login_required
 def get_error_context():
     """
     获取错误日志的上下文
@@ -472,6 +557,7 @@ def get_error_context():
 
 
 @app.route('/api/stats', methods=['POST'])
+@login_required
 def get_stats():
     """
     统计分析

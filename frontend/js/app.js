@@ -20,11 +20,61 @@ document.addEventListener('DOMContentLoaded', function() {
     initBatchQuery();
     initDownload();
     initStats();
+    initLogout();
     checkHealth();
 
     // 定期检查健康状态
     setInterval(checkHealth, 60000);
 });
+
+// 登出功能
+function initLogout() {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async function() {
+            if (confirm('确定要退出登录吗？')) {
+                try {
+                    const response = await fetch(`${API_BASE}/logout`, {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+
+                    if (response.ok) {
+                        // 跳转到登录页
+                        window.location.href = '/';
+                    } else {
+                        alert('登出失败，请重试');
+                    }
+                } catch (error) {
+                    console.error('登出错误:', error);
+                    alert('网络错误，请重试');
+                }
+            }
+        });
+    }
+}
+
+// 处理未授权错误（会话过期）
+function handleUnauthorized(response) {
+    if (response.status === 401) {
+        alert('登录已过期，请重新登录');
+        window.location.href = '/';
+        return true;
+    }
+    return false;
+}
+
+// 封装fetch调用，自动处理未授权错误
+async function apiFetch(url, options = {}) {
+    options.credentials = 'include';
+    const response = await fetch(url, options);
+
+    if (handleUnauthorized(response)) {
+        throw new Error('Unauthorized');
+    }
+
+    return response;
+}
 
 // 导航功能
 function initNavigation() {
