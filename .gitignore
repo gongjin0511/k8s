@@ -34,8 +34,7 @@ logs/*.zip
 logs/*.txt
 *.log
 
-# Kubeconfigs
-kubeconfigs/
+# Downloaded files
 files/
 
 # IDE

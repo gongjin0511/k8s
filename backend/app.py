@@ -12,6 +12,12 @@ from datetime import datetime
 import zipfile
 import io
 from typing import Dict, List
+import yaml
+
+# 加载配置文件
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config.yaml')
+with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
 
 # 配置日志
 logging.basicConfig(
@@ -24,15 +30,22 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)  # 允许跨域请求
 
+# 从配置文件读取kubeconfig路径
+kubeconfig_path = config.get('kubectl', {}).get('kubeconfig_path')
+if kubeconfig_path:
+    # 展开用户目录符号 ~
+    kubeconfig_path = os.path.expanduser(kubeconfig_path)
+    logger.info(f"使用kubeconfig: {kubeconfig_path}")
+else:
+    logger.info("使用默认kubeconfig路径")
+
 # 初始化kubectl helper
-kubectl = KubectlHelper(timeout=300)
+kubectl = KubectlHelper(timeout=300, kubeconfig=kubeconfig_path)
 
 # 配置
 LOGS_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
-KUBECONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'kubeconfigs')
 FILES_DIR = os.path.join(os.path.dirname(__file__), '..', 'files')
 os.makedirs(LOGS_DIR, exist_ok=True)
-os.makedirs(KUBECONFIG_DIR, exist_ok=True)
 os.makedirs(FILES_DIR, exist_ok=True)
 
 # 限制配置
@@ -361,71 +374,6 @@ def get_stats():
         })
     except Exception as e:
         logger.error(f"统计分析失败: {str(e)}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/kubeconfig/upload', methods=['POST'])
-def upload_kubeconfig():
-    """
-    上传kubeconfig文件
-    """
-    try:
-        if 'file' not in request.files:
-            return jsonify({
-                'success': False,
-                'error': '没有上传文件'
-            }), 400
-
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({
-                'success': False,
-                'error': '文件名为空'
-            }), 400
-
-        # 保存文件
-        filename = 'kubeconfig'
-        filepath = os.path.join(KUBECONFIG_DIR, filename)
-        file.save(filepath)
-
-        # 重新初始化kubectl helper
-        global kubectl
-        kubectl = KubectlHelper(timeout=300, kubeconfig=filepath)
-
-        logger.info(f"kubeconfig已上传: {filepath}")
-        return jsonify({
-            'success': True,
-            'message': 'kubeconfig上传成功'
-        })
-    except Exception as e:
-        logger.error(f"上传kubeconfig失败: {str(e)}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/kubeconfig/status', methods=['GET'])
-def get_kubeconfig_status():
-    """
-    获取kubeconfig状态
-    """
-    try:
-        kubeconfig_path = os.path.join(KUBECONFIG_DIR, 'kubeconfig')
-        exists = os.path.exists(kubeconfig_path)
-
-        return jsonify({
-            'success': True,
-            'data': {
-                'configured': exists,
-                'path': kubeconfig_path if exists else None
-            }
-        })
-    except Exception as e:
-        logger.error(f"获取kubeconfig状态失败: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
             'error': str(e)

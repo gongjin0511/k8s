@@ -27,6 +27,10 @@ kubectl:
   # kubectl命令路径 (默认从PATH查找)
   command: kubectl
 
+  # kubeconfig文件路径 (可选，留空则使用默认~/.kube/config)
+  # 示例: /path/to/kubeconfig 或 ~/.kube/config
+  kubeconfig_path:
+
   # 默认超时时间 (秒)
   default_timeout: 300
 

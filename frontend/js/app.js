@@ -14,7 +14,6 @@ const appState = {
 // 初始化应用
 document.addEventListener('DOMContentLoaded', function() {
     initNavigation();
-    initKubeconfig();
     initPodPanel();
     initDeploymentQuery();
     initHistoryLogs();
@@ -58,11 +57,6 @@ function switchView(viewName) {
     document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
 
     appState.currentView = viewName;
-
-    // 页面切换时的初始化操作
-    if (viewName === 'kubeconfig') {
-        checkKubeconfigStatus();
-    }
 }
 
 // 健康检查
@@ -715,94 +709,6 @@ function downloadTextFile(content, filename) {
     a.download = filename;
     a.click();
     window.URL.revokeObjectURL(url);
-}
-
-// ========== Kubeconfig配置管理 ==========
-
-function initKubeconfig() {
-    document.getElementById('kubeconfig-upload-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        await uploadKubeconfig();
-    });
-
-    checkKubeconfigStatus();
-}
-
-async function uploadKubeconfig() {
-    const fileInput = document.getElementById('kubeconfig-file');
-    const file = fileInput.files[0];
-
-    if (!file) {
-        showToast('warning', '请选择kubeconfig文件');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const statusDiv = document.getElementById('kubeconfig-status');
-    statusDiv.textContent = '正在上传...';
-    statusDiv.className = 'alert alert-info';
-    statusDiv.style.display = 'block';
-
-    try {
-        const response = await fetch(`${API_BASE}/kubeconfig/upload`, {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            statusDiv.textContent = 'Kubeconfig上传成功！';
-            statusDiv.className = 'alert alert-success';
-            showToast('success', 'Kubeconfig上传成功');
-            checkKubeconfigStatus();
-        } else {
-            statusDiv.textContent = `上传失败: ${data.error}`;
-            statusDiv.className = 'alert alert-danger';
-            showToast('error', `上传失败: ${data.error}`);
-        }
-    } catch (error) {
-        statusDiv.textContent = `上传失败: ${error.message}`;
-        statusDiv.className = 'alert alert-danger';
-        showToast('error', `请求失败: ${error.message}`);
-    }
-}
-
-async function checkKubeconfigStatus() {
-    try {
-        const response = await fetch(`${API_BASE}/kubeconfig/status`);
-        const data = await response.json();
-
-        const infoDiv = document.getElementById('kubeconfig-info');
-
-        if (data.success && data.data.configured) {
-            infoDiv.innerHTML = `
-                <div class="alert alert-success">
-                    <i class="bi bi-check-circle"></i>
-                    <strong>已配置</strong><br>
-                    路径: <code>${data.data.path}</code>
-                </div>
-            `;
-        } else {
-            infoDiv.innerHTML = `
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    <strong>未配置</strong><br>
-                    请上传kubeconfig文件以连接到Kubernetes集群
-                </div>
-            `;
-        }
-    } catch (error) {
-        const infoDiv = document.getElementById('kubeconfig-info');
-        infoDiv.innerHTML = `
-            <div class="alert alert-danger">
-                <i class="bi bi-x-circle"></i>
-                检查状态失败: ${error.message}
-            </div>
-        `;
-    }
 }
 
 // ========== Pod实例面板 ==========
