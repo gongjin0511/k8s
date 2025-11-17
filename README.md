@@ -4,13 +4,22 @@
 
 ## 功能特性
 
+### 核心功能
+- **Pod实例面板**: 查看Pod详细信息（状态、IP、容器等）
+- **Deployment查询**: 查询整个Deployment下所有Pod的日志
 - **单Pod查询**: 查询指定Pod的Console日志和文件日志
+- **历史日志查询**: 查询/applog目录下的所有历史日志文件
+- **文件复制下载**: 从Pod复制和下载指定文件
 - **批量查询**: 支持通配符批量查询多个namespace的日志
 - **关键字搜索**: 支持多关键字过滤和正则表达式匹配
 - **日志下载**: 将查询结果导出为ZIP文件
 - **统计分析**: 错误日志统计和Top Pod排行
+
+### 技术特性
+- **后端配置管理**: Kubeconfig通过配置文件管理，安全可靠
 - **实时进度**: 批量查询时显示实时进度
 - **友好界面**: 现代化的Web UI，响应式设计
+- **灵活配置**: 通过config.yaml轻松调整各项参数
 
 ## 技术架构
 
@@ -57,27 +66,36 @@ k8s-log-viewer/
 ### 前提条件
 
 - 已安装 `kubectl` 命令行工具
-- 已配置 `kubeconfig` (通常在 `~/.kube/config`)
+- 已配置 `kubeconfig`
 - 有对K8s集群的访问权限
 - Python 3.9+ (本地运行时)
 - Docker (Docker部署时)
 
 ### 方式1: 本地运行 (开发/测试)
 
-1. **安装依赖**
+1. **配置kubeconfig**
+
+编辑 `backend/config.yaml`:
+
+```yaml
+kubectl:
+  kubeconfig_path: ~/.kube/config  # 或指定其他路径
+```
+
+2. **安装依赖**
 
 ```bash
 cd backend
 pip install -r requirements.txt
 ```
 
-2. **启动应用**
+3. **启动应用**
 
 ```bash
 python app.py
 ```
 
-3. **访问界面**
+4. **访问界面**
 
 打开浏览器访问: http://localhost:5000
 
@@ -393,22 +411,39 @@ Response:
 
 ## 配置说明
 
-### 限制配置
+### Kubeconfig配置
 
-在 `backend/app.py` 中可以修改以下限制:
+在 `backend/config.yaml` 中配置kubeconfig文件路径：
 
-```python
-MAX_TAIL_LINES = 10000      # 单次查询最大行数
-MAX_BATCH_PODS = 100        # 批量查询最大Pod数
-MAX_DOWNLOAD_SIZE = 100MB   # 下载文件最大大小
+```yaml
+kubectl:
+  # kubeconfig文件路径 (可选，留空则使用默认~/.kube/config)
+  kubeconfig_path: /path/to/your/kubeconfig
+
+  # 或使用用户目录符号
+  kubeconfig_path: ~/.kube/config
 ```
 
-### kubectl超时配置
+**重要说明**:
+- 留空 `kubeconfig_path:` 将使用kubectl的默认配置（通常是 `~/.kube/config`）
+- 支持 `~` 符号表示用户目录
+- 推荐将kubeconfig文件放在安全的位置，并设置适当的文件权限（如 `chmod 600`）
 
-在 `backend/kubectl_helper.py` 中修改:
+### 限制配置
 
-```python
-def __init__(self, timeout: int = 300):  # 默认5分钟
+在 `backend/config.yaml` 中可以修改以下限制:
+
+```yaml
+limits:
+  max_tail_lines: 10000           # 单次查询最大行数
+  max_batch_pods: 100             # 批量查询最大Pod数
+  max_download_size_mb: 100       # 下载文件最大大小(MB)
+  query_timeout_seconds: 300      # 查询超时时间(秒)
+
+kubectl:
+  default_timeout: 300            # kubectl命令默认超时(秒)
+  log_directory: /applog          # Pod内日志目录
+  log_file_pattern: root.log      # 日志文件名模式
 ```
 
 ### 资源限制 (K8s部署)
