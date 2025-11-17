@@ -17,12 +17,14 @@ logger = logging.getLogger(__name__)
 class KubectlHelper:
     """kubectl命令行工具封装类"""
 
-    def __init__(self, timeout: int = 300):
+    def __init__(self, timeout: int = 300, kubeconfig: Optional[str] = None):
         """
         初始化
         :param timeout: kubectl命令执行超时时间(秒)
+        :param kubeconfig: kubeconfig文件路径，None则使用默认配置
         """
         self.timeout = timeout
+        self.kubeconfig = kubeconfig
         self._verify_kubectl()
 
     def _verify_kubectl(self):
@@ -45,7 +47,13 @@ class KubectlHelper:
         :return: {'success': bool, 'stdout': str, 'stderr': str, 'error': str}
         """
         timeout = timeout or self.timeout
-        full_cmd = ['kubectl'] + cmd
+        full_cmd = ['kubectl']
+
+        # 添加kubeconfig参数
+        if self.kubeconfig:
+            full_cmd.extend(['--kubeconfig', self.kubeconfig])
+
+        full_cmd.extend(cmd)
 
         try:
             logger.info(f"执行命令: {' '.join(full_cmd)}")
@@ -371,3 +379,185 @@ class KubectlHelper:
 
         logger.info(f"批量查询完成: 查询了{pod_count}个pod, {len(results)}个有匹配")
         return results
+
+    def get_deployments(self, namespace: str) -> List[Dict]:
+        """
+        获取指定namespace的deployment列表
+        :param namespace: namespace名称
+        :return: deployment信息列表
+        """
+        result = self.run_kubectl(['get', 'deployments', '-n', namespace, '-o', 'json'])
+
+        if not result['success']:
+            logger.error(f"获取deployments失败 [{namespace}]: {result['error']}")
+            return []
+
+        try:
+            data = json.loads(result['stdout'])
+            deployments = []
+
+            for item in data.get('items', []):
+                name = item['metadata']['name']
+                spec = item.get('spec', {})
+                status = item.get('status', {})
+
+                deployment_info = {
+                    'name': name,
+                    'replicas': spec.get('replicas', 0),
+                    'ready_replicas': status.get('readyReplicas', 0),
+                    'available_replicas': status.get('availableReplicas', 0)
+                }
+                deployments.append(deployment_info)
+
+            logger.info(f"在namespace [{namespace}] 中找到 {len(deployments)} 个deployment")
+            return deployments
+        except json.JSONDecodeError as e:
+            logger.error(f"解析deployments JSON失败: {str(e)}")
+            return []
+
+    def get_pods_by_deployment(self, namespace: str, deployment: str) -> List[Dict]:
+        """
+        获取指定deployment的所有pod
+        :param namespace: namespace名称
+        :param deployment: deployment名称
+        :return: pod信息列表
+        """
+        # 使用label selector查询pod
+        label = f'app={deployment}'
+        result = self.run_kubectl(['get', 'pods', '-n', namespace, '-l', label, '-o', 'json'])
+
+        if not result['success']:
+            logger.error(f"获取deployment pods失败 [{namespace}/{deployment}]: {result['error']}")
+            return []
+
+        try:
+            data = json.loads(result['stdout'])
+            pods = []
+
+            for item in data.get('items', []):
+                name = item['metadata']['name']
+                status_info = item.get('status', {})
+                phase = status_info.get('phase', 'Unknown')
+
+                container_statuses = status_info.get('containerStatuses', [])
+                ready = all(cs.get('ready', False) for cs in container_statuses) if container_statuses else False
+
+                pod_info = {
+                    'name': name,
+                    'status': phase,
+                    'ready': ready
+                }
+                pods.append(pod_info)
+
+            logger.info(f"Deployment [{namespace}/{deployment}] 有 {len(pods)} 个pod")
+            return pods
+        except json.JSONDecodeError as e:
+            logger.error(f"解析deployment pods JSON失败: {str(e)}")
+            return []
+
+    def copy_file_from_pod(
+        self,
+        namespace: str,
+        pod: str,
+        source_path: str,
+        dest_path: str
+    ) -> bool:
+        """
+        从Pod复制文件到本地
+        :param namespace: namespace名称
+        :param pod: pod名称
+        :param source_path: Pod内的源文件路径
+        :param dest_path: 本地目标路径
+        :return: 是否成功
+        """
+        cmd = ['cp', f'{namespace}/{pod}:{source_path}', dest_path]
+        result = self.run_kubectl(cmd, timeout=120)
+
+        if result['success']:
+            logger.info(f"文件复制成功: {namespace}/{pod}:{source_path} -> {dest_path}")
+            return True
+        else:
+            logger.error(f"文件复制失败: {result['error']}")
+            return False
+
+    def find_history_log_files(
+        self,
+        namespace: str,
+        pod: str,
+        log_dir: str = '/applog',
+        pattern: str = '*.log'
+    ) -> List[str]:
+        """
+        查找Pod内的所有日志文件（包括历史日志）
+        :param namespace: namespace名称
+        :param pod: pod名称
+        :param log_dir: 日志目录路径
+        :param pattern: 文件匹配模式
+        :return: 日志文件路径列表
+        """
+        # 查找所有.log文件
+        cmd = ['exec', '-n', namespace, pod, '--', 'find', log_dir, '-name', pattern, '-type', 'f']
+        result = self.run_kubectl(cmd, timeout=30)
+
+        if not result['success']:
+            logger.warning(f"查找历史日志文件失败 [{namespace}/{pod}]: {result['error']}")
+            return []
+
+        files = [f.strip() for f in result['stdout'].split('\n') if f.strip()]
+        logger.info(f"在 [{namespace}/{pod}] 找到 {len(files)} 个日志文件")
+        return sorted(files)
+
+    def get_pod_details(self, namespace: str, pod: str) -> Optional[Dict]:
+        """
+        获取Pod的详细信息
+        :param namespace: namespace名称
+        :param pod: pod名称
+        :return: Pod详细信息字典
+        """
+        result = self.run_kubectl(['get', 'pod', pod, '-n', namespace, '-o', 'json'])
+
+        if not result['success']:
+            logger.error(f"获取pod详情失败 [{namespace}/{pod}]: {result['error']}")
+            return None
+
+        try:
+            data = json.loads(result['stdout'])
+            metadata = data.get('metadata', {})
+            spec = data.get('spec', {})
+            status = data.get('status', {})
+
+            # 提取关键信息
+            pod_info = {
+                'name': metadata.get('name'),
+                'namespace': metadata.get('namespace'),
+                'labels': metadata.get('labels', {}),
+                'node': spec.get('nodeName'),
+                'phase': status.get('phase'),
+                'pod_ip': status.get('podIP'),
+                'host_ip': status.get('hostIP'),
+                'start_time': status.get('startTime'),
+                'containers': [],
+                'conditions': status.get('conditions', [])
+            }
+
+            # 容器信息
+            for container in spec.get('containers', []):
+                container_info = {
+                    'name': container.get('name'),
+                    'image': container.get('image'),
+                    'ports': container.get('ports', [])
+                }
+                pod_info['containers'].append(container_info)
+
+            # 容器状态
+            container_statuses = status.get('containerStatuses', [])
+            for i, cs in enumerate(container_statuses):
+                if i < len(pod_info['containers']):
+                    pod_info['containers'][i]['ready'] = cs.get('ready', False)
+                    pod_info['containers'][i]['restart_count'] = cs.get('restartCount', 0)
+                    pod_info['containers'][i]['state'] = cs.get('state', {})
+
+            return pod_info
+        except json.JSONDecodeError as e:
+            logger.error(f"解析pod详情JSON失败: {str(e)}")
+            return None

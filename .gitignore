@@ -34,6 +34,10 @@ logs/*.zip
 logs/*.txt
 *.log
 
+# Kubeconfigs
+kubeconfigs/
+files/
+
 # IDE
 .vscode/
 .idea/

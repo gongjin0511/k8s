@@ -28,8 +28,23 @@
             <!-- 侧边栏 -->
             <div class="col-md-2 bg-light sidebar">
                 <div class="list-group list-group-flush">
-                    <a href="#" class="list-group-item list-group-item-action active" data-view="single-query">
+                    <a href="#" class="list-group-item list-group-item-action active" data-view="kubeconfig">
+                        <i class="bi bi-gear"></i> 配置管理
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="pod-panel">
+                        <i class="bi bi-grid"></i> Pod面板
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="deployment-query">
+                        <i class="bi bi-layers"></i> Deployment查询
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="single-query">
                         <i class="bi bi-search"></i> 单Pod查询
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="history-logs">
+                        <i class="bi bi-clock-history"></i> 历史日志
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="file-copy">
+                        <i class="bi bi-file-earmark-arrow-down"></i> 文件复制
                     </a>
                     <a href="#" class="list-group-item list-group-item-action" data-view="batch-query">
                         <i class="bi bi-collection"></i> 批量查询
@@ -45,6 +60,276 @@
 
             <!-- 主内容区 -->
             <div class="col-md-10 main-content">
+                <!-- Kubeconfig配置 -->
+                <div id="kubeconfig-view" class="view-container">
+                    <h3 class="mb-4">Kubernetes配置管理</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">上传Kubeconfig文件</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i>
+                                上传您的kubeconfig文件以连接到Kubernetes集群。文件将被安全地存储在服务器上。
+                            </div>
+
+                            <form id="kubeconfig-upload-form">
+                                <div class="mb-3">
+                                    <label class="form-label">选择Kubeconfig文件</label>
+                                    <input class="form-control" type="file" id="kubeconfig-file" accept=".yaml,.yml">
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-upload"></i> 上传配置
+                                </button>
+                            </form>
+
+                            <div id="kubeconfig-status" class="mt-3"></div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">配置状态</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="kubeconfig-info">
+                                <div class="spinner-border spinner-border-sm" role="status"></div>
+                                正在检查配置状态...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pod实例面板 -->
+                <div id="pod-panel-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">Pod实例管理面板</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Namespace</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="panel-namespace-input"
+                                               placeholder="输入namespace">
+                                        <button class="btn btn-outline-secondary" type="button" id="panel-load-namespaces">
+                                            <i class="bi bi-arrow-repeat"></i> 加载
+                                        </button>
+                                    </div>
+                                    <select class="form-select mt-2" id="panel-namespace-select" size="5"></select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Pod</label>
+                                    <button class="btn btn-outline-secondary btn-sm float-end" type="button" id="panel-load-pods">
+                                        <i class="bi bi-arrow-repeat"></i> 加载
+                                    </button>
+                                    <select class="form-select" id="panel-pod-select" size="6"></select>
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-primary" id="panel-view-details">
+                                <i class="bi bi-eye"></i> 查看Pod详情
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pod详情展示 -->
+                    <div id="pod-details-container" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="mb-0">Pod详细信息</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="pod-details-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deployment查询 -->
+                <div id="deployment-query-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">Deployment日志查询</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="deployment-query-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Namespace</label>
+                                        <input type="text" class="form-control" id="deploy-namespace"
+                                               placeholder="输入namespace">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Deployment</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="deploy-deployment">
+                                            <button class="btn btn-outline-secondary" type="button" id="load-deployments-btn">
+                                                <i class="bi bi-arrow-repeat"></i> 加载
+                                            </button>
+                                        </div>
+                                        <select class="form-select mt-2" id="deploy-deployment-select" size="5"></select>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">日志类型</label>
+                                        <select class="form-select" id="deploy-log-type">
+                                            <option value="all">全部</option>
+                                            <option value="console">仅Console</option>
+                                            <option value="file">仅文件</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">行数</label>
+                                        <input type="number" class="form-control" id="deploy-tail"
+                                               value="2000" min="100" max="10000">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">关键字</label>
+                                        <input type="text" class="form-control" id="deploy-keywords"
+                                               placeholder="如: error,timeout">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-search"></i> 查询Deployment日志
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="deploy-query-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">正在查询deployment日志...</p>
+                    </div>
+
+                    <div id="deploy-query-result" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-success text-white">
+                                <h5 class="mb-0">Deployment日志查询结果</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="deploy-result-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 历史日志查询 -->
+                <div id="history-logs-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">历史日志查询</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="history-logs-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Namespace</label>
+                                        <input type="text" class="form-control" id="history-namespace"
+                                               placeholder="输入namespace">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Pod</label>
+                                        <input type="text" class="form-control" id="history-pod"
+                                               placeholder="输入pod名称">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">日志目录</label>
+                                        <input type="text" class="form-control" id="history-log-dir"
+                                               value="/applog" placeholder="/applog">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">行数</label>
+                                        <input type="number" class="form-control" id="history-tail"
+                                               value="1000" min="100" max="10000">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">关键字</label>
+                                        <input type="text" class="form-control" id="history-keywords"
+                                               placeholder="如: error">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-clock-history"></i> 查询历史日志
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="history-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">正在查询历史日志...</p>
+                    </div>
+
+                    <div id="history-result" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-success text-white">
+                                <h5 class="mb-0">历史日志查询结果</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="history-result-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 文件复制下载 -->
+                <div id="file-copy-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">Pod文件复制下载</h3>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="file-copy-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Namespace</label>
+                                        <input type="text" class="form-control" id="copy-namespace"
+                                               placeholder="输入namespace">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Pod</label>
+                                        <input type="text" class="form-control" id="copy-pod"
+                                               placeholder="输入pod名称">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">文件路径</label>
+                                        <input type="text" class="form-control" id="copy-file-path"
+                                               placeholder="如: /applog/root.log">
+                                    </div>
+                                </div>
+
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-secondary" id="list-files-btn">
+                                        <i class="bi bi-list"></i> 列出文件
+                                    </button>
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="bi bi-download"></i> 复制并下载
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="file-list-container" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">Pod中的文件列表</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="list-group" id="file-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="copy-status" class="alert mt-3" style="display: none;"></div>
+                </div>
+
                 <!-- 单Pod查询 -->
                 <div id="single-query-view" class="view-container">
                     <h3 class="mb-4">单Pod日志查询</h3>

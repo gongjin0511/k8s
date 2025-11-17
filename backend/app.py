@@ -29,7 +29,11 @@ kubectl = KubectlHelper(timeout=300)
 
 # 配置
 LOGS_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
+KUBECONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'kubeconfigs')
+FILES_DIR = os.path.join(os.path.dirname(__file__), '..', 'files')
 os.makedirs(LOGS_DIR, exist_ok=True)
+os.makedirs(KUBECONFIG_DIR, exist_ok=True)
+os.makedirs(FILES_DIR, exist_ok=True)
 
 # 限制配置
 MAX_TAIL_LINES = 10000
@@ -357,6 +361,394 @@ def get_stats():
         })
     except Exception as e:
         logger.error(f"统计分析失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/kubeconfig/upload', methods=['POST'])
+def upload_kubeconfig():
+    """
+    上传kubeconfig文件
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': '没有上传文件'
+            }), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': '文件名为空'
+            }), 400
+
+        # 保存文件
+        filename = 'kubeconfig'
+        filepath = os.path.join(KUBECONFIG_DIR, filename)
+        file.save(filepath)
+
+        # 重新初始化kubectl helper
+        global kubectl
+        kubectl = KubectlHelper(timeout=300, kubeconfig=filepath)
+
+        logger.info(f"kubeconfig已上传: {filepath}")
+        return jsonify({
+            'success': True,
+            'message': 'kubeconfig上传成功'
+        })
+    except Exception as e:
+        logger.error(f"上传kubeconfig失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/kubeconfig/status', methods=['GET'])
+def get_kubeconfig_status():
+    """
+    获取kubeconfig状态
+    """
+    try:
+        kubeconfig_path = os.path.join(KUBECONFIG_DIR, 'kubeconfig')
+        exists = os.path.exists(kubeconfig_path)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'configured': exists,
+                'path': kubeconfig_path if exists else None
+            }
+        })
+    except Exception as e:
+        logger.error(f"获取kubeconfig状态失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/deployments', methods=['GET'])
+def get_deployments():
+    """
+    获取deployment列表
+    Query参数:
+      - namespace: namespace名称 (必需)
+    """
+    try:
+        namespace = request.args.get('namespace')
+        if not namespace:
+            return jsonify({
+                'success': False,
+                'error': 'namespace参数必需'
+            }), 400
+
+        deployments = kubectl.get_deployments(namespace)
+
+        return jsonify({
+            'success': True,
+            'data': deployments,
+            'count': len(deployments)
+        })
+    except Exception as e:
+        logger.error(f"获取deployments失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/deployments/pods', methods=['GET'])
+def get_deployment_pods():
+    """
+    获取deployment的所有pod
+    Query参数:
+      - namespace: namespace名称 (必需)
+      - deployment: deployment名称 (必需)
+    """
+    try:
+        namespace = request.args.get('namespace')
+        deployment = request.args.get('deployment')
+
+        if not namespace or not deployment:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和deployment参数必需'
+            }), 400
+
+        pods = kubectl.get_pods_by_deployment(namespace, deployment)
+
+        return jsonify({
+            'success': True,
+            'data': pods,
+            'count': len(pods)
+        })
+    except Exception as e:
+        logger.error(f"获取deployment pods失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/deployments/logs', methods=['POST'])
+def query_deployment_logs():
+    """
+    查询deployment所有pod的日志
+    Body参数:
+    {
+      "namespace": "erp-prod",
+      "deployment": "app-server",
+      "type": "all",
+      "tail": 2000,
+      "keywords": ["error"]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        namespace = data.get('namespace')
+        deployment = data.get('deployment')
+        if not namespace or not deployment:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和deployment参数必需'
+            }), 400
+
+        log_type = data.get('type', 'all')
+        tail = min(int(data.get('tail', 2000)), MAX_TAIL_LINES)
+        keywords = data.get('keywords', [])
+
+        # 获取deployment的所有pod
+        pods = kubectl.get_pods_by_deployment(namespace, deployment)
+
+        # 查询每个pod的日志
+        results = []
+        for pod_info in pods:
+            pod = pod_info['name']
+            logs = kubectl.get_all_logs(namespace, pod, tail, keywords, log_type)
+
+            console_matches = len(logs['console_log'])
+            file_matches = sum(len(lines) for lines in logs['file_logs'].values())
+
+            results.append({
+                'pod': pod,
+                'status': pod_info['status'],
+                'ready': pod_info['ready'],
+                'console_matches': console_matches,
+                'file_matches': file_matches,
+                'total_matches': console_matches + file_matches,
+                'logs': logs
+            })
+
+        total_matches = sum(r['total_matches'] for r in results)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'namespace': namespace,
+                'deployment': deployment,
+                'pods': results,
+                'total_pods': len(results),
+                'total_matches': total_matches
+            }
+        })
+    except Exception as e:
+        logger.error(f"查询deployment日志失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/pods/files', methods=['GET'])
+def list_pod_files():
+    """
+    列出Pod中的文件
+    Query参数:
+      - namespace: namespace名称
+      - pod: pod名称
+      - path: 目录路径，默认/applog
+    """
+    try:
+        namespace = request.args.get('namespace')
+        pod = request.args.get('pod')
+        path = request.args.get('path', '/applog')
+
+        if not namespace or not pod:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和pod参数必需'
+            }), 400
+
+        # 查找文件
+        files = kubectl.find_history_log_files(namespace, pod, path, '*.log')
+
+        return jsonify({
+            'success': True,
+            'data': files,
+            'count': len(files)
+        })
+    except Exception as e:
+        logger.error(f"列出pod文件失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/pods/copy', methods=['POST'])
+def copy_pod_file():
+    """
+    从Pod复制文件
+    Body参数:
+    {
+      "namespace": "erp-prod",
+      "pod": "pod-name",
+      "file_path": "/applog/root.log"
+    }
+    """
+    try:
+        data = request.get_json()
+
+        namespace = data.get('namespace')
+        pod = data.get('pod')
+        file_path = data.get('file_path')
+
+        if not namespace or not pod or not file_path:
+            return jsonify({
+                'success': False,
+                'error': 'namespace、pod和file_path参数必需'
+            }), 400
+
+        # 生成本地文件名
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        filename = os.path.basename(file_path)
+        dest_path = os.path.join(FILES_DIR, f"{namespace}-{pod}-{filename}-{timestamp}")
+
+        # 复制文件
+        success = kubectl.copy_file_from_pod(namespace, pod, file_path, dest_path)
+
+        if success:
+            # 返回文件供下载
+            return send_file(
+                dest_path,
+                as_attachment=True,
+                download_name=f"{namespace}-{pod}-{filename}"
+            )
+        else:
+            return jsonify({
+                'success': False,
+                'error': '文件复制失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"复制pod文件失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/pods/details', methods=['GET'])
+def get_pod_details():
+    """
+    获取Pod详细信息
+    Query参数:
+      - namespace: namespace名称
+      - pod: pod名称
+    """
+    try:
+        namespace = request.args.get('namespace')
+        pod = request.args.get('pod')
+
+        if not namespace or not pod:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和pod参数必需'
+            }), 400
+
+        details = kubectl.get_pod_details(namespace, pod)
+
+        if details:
+            return jsonify({
+                'success': True,
+                'data': details
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '获取pod详情失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"获取pod详情失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logs/history', methods=['POST'])
+def query_history_logs():
+    """
+    查询历史日志文件
+    Body参数:
+    {
+      "namespace": "erp-prod",
+      "pod": "pod-name",
+      "log_dir": "/applog",
+      "tail": 1000,
+      "keywords": ["error"]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        namespace = data.get('namespace')
+        pod = data.get('pod')
+        if not namespace or not pod:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和pod参数必需'
+            }), 400
+
+        log_dir = data.get('log_dir', '/applog')
+        tail = min(int(data.get('tail', 1000)), MAX_TAIL_LINES)
+        keywords = data.get('keywords', [])
+
+        # 查找所有日志文件
+        log_files = kubectl.find_history_log_files(namespace, pod, log_dir, '*.log')
+
+        # 查询每个文件的日志
+        results = {}
+        for filepath in log_files:
+            file_lines, file_total = kubectl.get_file_log(
+                namespace, pod, filepath, tail, keywords
+            )
+            if file_lines:
+                results[filepath] = {
+                    'lines': file_lines,
+                    'total': file_total,
+                    'matched': len(file_lines)
+                }
+
+        total_matches = sum(r['matched'] for r in results.values())
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'namespace': namespace,
+                'pod': pod,
+                'files': results,
+                'total_files': len(results),
+                'total_matches': total_matches
+            }
+        })
+    except Exception as e:
+        logger.error(f"查询历史日志失败: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
             'error': str(e)
