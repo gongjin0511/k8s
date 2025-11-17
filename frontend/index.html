@@ -28,7 +28,13 @@
             <!-- 侧边栏 -->
             <div class="col-md-2 bg-light sidebar">
                 <div class="list-group list-group-flush">
-                    <a href="#" class="list-group-item list-group-item-action active" data-view="single-query">
+                    <a href="#" class="list-group-item list-group-item-action active" data-view="namespace-explorer">
+                        <i class="bi bi-hdd-stack"></i> 命名空间浏览
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="error-context">
+                        <i class="bi bi-bug"></i> 错误上下文查询
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" data-view="single-query">
                         <i class="bi bi-search"></i> 单Pod查询
                     </a>
                     <a href="#" class="list-group-item list-group-item-action" data-view="batch-query">
@@ -45,6 +51,128 @@
 
             <!-- 主内容区 -->
             <div class="col-md-10 main-content">
+                <!-- 命名空间浏览器 -->
+                <div id="namespace-explorer-view" class="view-container">
+                    <h3 class="mb-4">命名空间浏览器</h3>
+                    <p class="text-muted">自动按命名空间组织展示所有Pods，无需手动选择</p>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-md-8">
+                                    <label class="form-label">过滤条件 (可选)</label>
+                                    <input type="text" class="form-control" id="ns-explorer-pattern"
+                                           placeholder="输入namespace通配符，如: erp-*,cnnc-* (留空则显示所有)">
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button class="btn btn-primary w-100" id="load-ns-explorer-btn">
+                                        <i class="bi bi-arrow-repeat"></i> 加载/刷新
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 加载中 -->
+                    <div id="ns-explorer-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">正在加载命名空间和Pods...</p>
+                    </div>
+
+                    <!-- Pods展示区 -->
+                    <div id="ns-explorer-result" style="display: none;">
+                        <div class="alert alert-info">
+                            <strong>统计信息:</strong>
+                            <span id="ns-explorer-stats"></span>
+                        </div>
+                        <div id="ns-explorer-content"></div>
+                    </div>
+                </div>
+
+                <!-- 错误上下文查询 -->
+                <div id="error-context-view" class="view-container" style="display: none;">
+                    <h3 class="mb-4">错误上下文查询</h3>
+                    <p class="text-muted">查询最新错误及其前后上下文，支持整个部署单元查询</p>
+
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <form id="error-context-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Namespace</label>
+                                        <input type="text" class="form-control" id="ec-namespace"
+                                               placeholder="输入namespace" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">查询方式</label>
+                                        <select class="form-select" id="ec-query-type">
+                                            <option value="deployment">整个部署单元 (Deployment/StatefulSet)</option>
+                                            <option value="pod">单个Pod</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6" id="ec-deployment-group">
+                                        <label class="form-label">Deployment/StatefulSet名称</label>
+                                        <input type="text" class="form-control" id="ec-deployment"
+                                               placeholder="输入deployment或statefulset名称">
+                                    </div>
+                                    <div class="col-md-6" id="ec-pod-group" style="display: none;">
+                                        <label class="form-label">Pod名称</label>
+                                        <input type="text" class="form-control" id="ec-pod"
+                                               placeholder="输入pod名称">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">错误关键字 (逗号分隔)</label>
+                                        <input type="text" class="form-control" id="ec-keywords"
+                                               value="error,exception,fatal" placeholder="error,exception,fatal">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">上下文行数</label>
+                                        <input type="number" class="form-control" id="ec-context-lines"
+                                               value="50" min="10" max="200">
+                                        <small class="form-text text-muted">错误前后各显示多少行</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">日志类型</label>
+                                        <select class="form-select" id="ec-log-type">
+                                            <option value="all">全部 (Console + 文件)</option>
+                                            <option value="console">仅Console日志</option>
+                                            <option value="file">仅文件日志</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-danger">
+                                        <i class="bi bi-bug"></i> 查询错误上下文
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" id="clear-ec-result">
+                                        <i class="bi bi-trash"></i> 清空结果
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 查询结果 -->
+                    <div id="ec-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">正在查询错误上下文...</p>
+                    </div>
+
+                    <div id="ec-result" style="display: none;">
+                        <div class="alert alert-warning">
+                            <strong>查询摘要:</strong> <span id="ec-summary"></span>
+                        </div>
+                        <div id="ec-content"></div>
+                    </div>
+                </div>
+
                 <!-- 单Pod查询 -->
                 <div id="single-query-view" class="view-container">
                     <h3 class="mb-4">单Pod日志查询</h3>

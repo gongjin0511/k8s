@@ -297,6 +297,150 @@ def download_logs():
         }), 500
 
 
+@app.route('/api/pods/grouped', methods=['GET'])
+def get_pods_grouped():
+    """
+    按命名空间分组获取Pods
+    Query参数:
+      - pattern: 通配符模式，多个用逗号分隔
+    """
+    try:
+        pattern_str = request.args.get('pattern', '')
+        patterns = [p.strip() for p in pattern_str.split(',') if p.strip()] if pattern_str else None
+
+        grouped_pods = kubectl.get_pods_by_namespace_group(patterns)
+
+        return jsonify({
+            'success': True,
+            'data': grouped_pods,
+            'namespace_count': len(grouped_pods)
+        })
+    except Exception as e:
+        logger.error(f"获取分组pods失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/deployment/pods', methods=['GET'])
+def get_deployment_pods():
+    """
+    获取Deployment/StatefulSet的所有Pods
+    Query参数:
+      - namespace: 命名空间
+      - deployment: deployment或statefulset名称
+    """
+    try:
+        namespace = request.args.get('namespace')
+        deployment = request.args.get('deployment')
+
+        if not namespace or not deployment:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和deployment参数必需'
+            }), 400
+
+        pod_names = kubectl.get_deployment_pods(namespace, deployment)
+
+        return jsonify({
+            'success': True,
+            'data': pod_names,
+            'count': len(pod_names)
+        })
+    except Exception as e:
+        logger.error(f"获取deployment pods失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logs/error-context', methods=['POST'])
+def get_error_context():
+    """
+    获取错误日志的上下文
+    Body参数:
+    {
+      "namespace": "erp-prod",
+      "pod": "pod-name",  // 可选，如果提供deployment则忽略
+      "deployment": "deployment-name",  // 可选，查询整个部署单元
+      "error_keywords": ["error", "exception"],
+      "context_lines": 50,
+      "type": "all"
+    }
+    """
+    try:
+        data = request.get_json()
+
+        namespace = data.get('namespace')
+        if not namespace:
+            return jsonify({
+                'success': False,
+                'error': 'namespace参数必需'
+            }), 400
+
+        error_keywords = data.get('error_keywords', ['error', 'exception', 'fatal'])
+        context_lines = min(int(data.get('context_lines', 50)), 200)  # 最大200行上下文
+        log_type = data.get('type', 'all')
+
+        # 获取Pod列表
+        pods = []
+        deployment = data.get('deployment')
+        if deployment:
+            # 查询整个部署单元
+            pods = kubectl.get_deployment_pods(namespace, deployment)
+            if not pods:
+                return jsonify({
+                    'success': False,
+                    'error': f'未找到deployment: {deployment}'
+                }), 404
+        else:
+            # 单个Pod
+            pod = data.get('pod')
+            if not pod:
+                return jsonify({
+                    'success': False,
+                    'error': 'pod或deployment参数至少需要一个'
+                }), 400
+            pods = [pod]
+
+        # 查询每个Pod的错误上下文
+        results = []
+        for pod_name in pods:
+            error_context = kubectl.get_error_context(
+                namespace, pod_name, error_keywords, context_lines, log_type
+            )
+
+            # 统计错误数
+            console_error_count = len(error_context['console_errors'])
+            file_error_count = sum(len(errors) for errors in error_context['file_errors'].values())
+            total_error_count = console_error_count + file_error_count
+
+            if total_error_count > 0:
+                results.append({
+                    'namespace': namespace,
+                    'pod': pod_name,
+                    'console_error_count': console_error_count,
+                    'file_error_count': file_error_count,
+                    'total_error_count': total_error_count,
+                    'error_context': error_context
+                })
+
+        return jsonify({
+            'success': True,
+            'data': results,
+            'total_pods': len(pods),
+            'pods_with_errors': len(results)
+        })
+    except Exception as e:
+        logger.error(f"获取错误上下文失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/stats', methods=['POST'])
 def get_stats():
     """

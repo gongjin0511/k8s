@@ -309,6 +309,182 @@ class KubectlHelper:
         matched = [line for line in lines if regex.search(line)]
         return matched
 
+    def get_pods_by_namespace_group(self, patterns: Optional[List[str]] = None) -> Dict[str, List[Dict]]:
+        """
+        按命名空间分组获取所有Pods
+        :param patterns: 通配符模式列表
+        :return: {namespace: [pods]}
+        """
+        namespaces = self.get_namespaces(patterns)
+        grouped_pods = {}
+
+        for namespace in namespaces:
+            pods = self.get_pods(namespace, status_filter='Running')
+            if pods:
+                grouped_pods[namespace] = pods
+
+        logger.info(f"按命名空间分组获取Pods: {len(grouped_pods)}个命名空间")
+        return grouped_pods
+
+    def get_deployment_pods(self, namespace: str, deployment: str) -> List[str]:
+        """
+        获取Deployment/StatefulSet的所有Pod
+        :param namespace: namespace名称
+        :param deployment: deployment或statefulset名称
+        :return: pod名称列表
+        """
+        # 先尝试作为deployment
+        result = self.run_kubectl(['get', 'deployment', deployment, '-n', namespace, '-o', 'json'])
+
+        if not result['success']:
+            # 再尝试作为statefulset
+            result = self.run_kubectl(['get', 'statefulset', deployment, '-n', namespace, '-o', 'json'])
+
+        if not result['success']:
+            logger.warning(f"未找到deployment/statefulset: {namespace}/{deployment}")
+            return []
+
+        try:
+            data = json.loads(result['stdout'])
+            # 获取selector labels
+            selector_labels = data.get('spec', {}).get('selector', {}).get('matchLabels', {})
+
+            if not selector_labels:
+                logger.warning(f"无法获取selector labels: {namespace}/{deployment}")
+                return []
+
+            # 构建label selector
+            label_selector = ','.join([f"{k}={v}" for k, v in selector_labels.items()])
+
+            # 获取匹配的pods
+            result = self.run_kubectl(['get', 'pods', '-n', namespace, '-l', label_selector, '-o', 'json'])
+
+            if not result['success']:
+                return []
+
+            data = json.loads(result['stdout'])
+            pod_names = [item['metadata']['name'] for item in data.get('items', [])]
+
+            logger.info(f"找到 {len(pod_names)} 个pods for {namespace}/{deployment}")
+            return pod_names
+
+        except json.JSONDecodeError as e:
+            logger.error(f"解析JSON失败: {str(e)}")
+            return []
+
+    def get_error_context(
+        self,
+        namespace: str,
+        pod: str,
+        error_keywords: List[str],
+        context_lines: int = 50,
+        log_type: str = 'all'
+    ) -> Dict:
+        """
+        获取错误日志的上下文
+        :param namespace: namespace名称
+        :param pod: pod名称
+        :param error_keywords: 错误关键字列表
+        :param context_lines: 上下文行数
+        :param log_type: 日志类型
+        :return: 包含错误及上下文的日志
+        """
+        result = {
+            'console_errors': [],
+            'file_errors': {}
+        }
+
+        # Console日志错误上下文
+        if log_type in ['console', 'all']:
+            console_errors = self._get_console_error_context(namespace, pod, error_keywords, context_lines)
+            result['console_errors'] = console_errors
+
+        # 文件日志错误上下文
+        if log_type in ['file', 'all']:
+            log_files = self.find_log_files(namespace, pod)
+            for filepath in log_files:
+                file_errors = self._get_file_error_context(namespace, pod, filepath, error_keywords, context_lines)
+                if file_errors:
+                    result['file_errors'][filepath] = file_errors
+
+        return result
+
+    def _get_console_error_context(
+        self,
+        namespace: str,
+        pod: str,
+        error_keywords: List[str],
+        context_lines: int
+    ) -> List[Dict]:
+        """
+        获取Console日志中错误的上下文
+        :return: [{'error_line': str, 'line_number': int, 'context': [lines]}]
+        """
+        # 获取最近5000行日志（确保能找到最新错误）
+        cmd = ['logs', '-n', namespace, pod, '--tail=5000']
+        result = self.run_kubectl(cmd, timeout=120)
+
+        if not result['success']:
+            logger.warning(f"获取console日志失败: {namespace}/{pod}")
+            return []
+
+        lines = result['stdout'].split('\n')
+        return self._extract_error_contexts(lines, error_keywords, context_lines)
+
+    def _get_file_error_context(
+        self,
+        namespace: str,
+        pod: str,
+        filepath: str,
+        error_keywords: List[str],
+        context_lines: int
+    ) -> List[Dict]:
+        """
+        获取文件日志中错误的上下文
+        """
+        # 获取最近5000行
+        cmd = ['exec', '-n', namespace, pod, '--', 'tail', '-n', '5000', filepath]
+        result = self.run_kubectl(cmd, timeout=120)
+
+        if not result['success']:
+            logger.warning(f"获取文件日志失败: {namespace}/{pod}:{filepath}")
+            return []
+
+        lines = result['stdout'].split('\n')
+        return self._extract_error_contexts(lines, error_keywords, context_lines)
+
+    def _extract_error_contexts(
+        self,
+        lines: List[str],
+        error_keywords: List[str],
+        context_lines: int
+    ) -> List[Dict]:
+        """
+        从日志行中提取错误及其上下文
+        :return: [{'error_line': str, 'line_number': int, 'before': [...], 'after': [...]}]
+        """
+        # 构建正则表达式
+        pattern = '|'.join(re.escape(kw) for kw in error_keywords)
+        regex = re.compile(pattern, re.IGNORECASE)
+
+        error_contexts = []
+
+        for i, line in enumerate(lines):
+            if regex.search(line):
+                # 找到错误行，提取上下文
+                before_start = max(0, i - context_lines)
+                after_end = min(len(lines), i + context_lines + 1)
+
+                error_contexts.append({
+                    'error_line': line,
+                    'line_number': i + 1,
+                    'before': lines[before_start:i],
+                    'after': lines[i+1:after_end]
+                })
+
+        logger.info(f"找到 {len(error_contexts)} 个错误上下文")
+        return error_contexts
+
     def batch_query_logs(
         self,
         namespace_patterns: List[str],

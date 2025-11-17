@@ -320,3 +320,60 @@ select option:hover {
     border-top: 2px solid #dee2e6;
     margin: 30px 0;
 }
+
+/* 错误上下文样式 */
+.error-context-block {
+    background-color: #fff3cd;
+    border-left: 4px solid #ff4444 !important;
+}
+
+.error-context-block .error-line {
+    background-color: #fff;
+    border-left: 3px solid #dc3545;
+    padding-left: 10px;
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.context-content {
+    margin-top: 10px;
+}
+
+.context-before,
+.context-after {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 5px 0;
+}
+
+.error-highlight-block {
+    background-color: #ffe6e6;
+    padding: 5px;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+/* 命名空间浏览器样式 */
+.ns-explorer-card {
+    transition: box-shadow 0.2s;
+}
+
+.ns-explorer-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Pod状态图标 */
+.pod-status-icon {
+    font-size: 1.2em;
+}
+
+/* 快速查看按钮 */
+.quick-view-btn {
+    font-size: 0.85em;
+}
+
+/* 上下文切换按钮 */
+.toggle-context-btn {
+    margin: 5px 0;
+}

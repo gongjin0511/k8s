@@ -14,6 +14,8 @@ const appState = {
 // 初始化应用
 document.addEventListener('DOMContentLoaded', function() {
     initNavigation();
+    initNamespaceExplorer();
+    initErrorContext();
     initSingleQuery();
     initBatchQuery();
     initDownload();
@@ -73,6 +75,354 @@ async function checkHealth() {
         const statusEl = document.getElementById('health-status');
         statusEl.textContent = '连接失败';
         statusEl.className = 'text-white health-error';
+    }
+}
+
+// ========== 命名空间浏览器 ==========
+
+function initNamespaceExplorer() {
+    // 加载按钮
+    document.getElementById('load-ns-explorer-btn').addEventListener('click', loadNamespaceExplorer);
+
+    // 页面加载时自动加载
+    setTimeout(loadNamespaceExplorer, 500);
+}
+
+async function loadNamespaceExplorer() {
+    const pattern = document.getElementById('ns-explorer-pattern').value;
+    const url = pattern ? `${API_BASE}/pods/grouped?pattern=${encodeURIComponent(pattern)}` : `${API_BASE}/pods/grouped`;
+
+    // 显示加载状态
+    document.getElementById('ns-explorer-loading').style.display = 'block';
+    document.getElementById('ns-explorer-result').style.display = 'none';
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.success) {
+            displayNamespaceExplorer(data.data);
+            showToast('success', `加载了 ${data.namespace_count} 个命名空间`);
+        } else {
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    } finally {
+        document.getElementById('ns-explorer-loading').style.display = 'none';
+    }
+}
+
+function displayNamespaceExplorer(groupedPods) {
+    const contentDiv = document.getElementById('ns-explorer-content');
+    let html = '';
+
+    // 统计
+    let totalPods = 0;
+    const nsCount = Object.keys(groupedPods).length;
+
+    if (nsCount === 0) {
+        html = `
+            <div class="alert alert-warning">
+                <i class="bi bi-inbox"></i> 未找到任何命名空间或Pods
+            </div>
+        `;
+    } else {
+        // 按命名空间分组展示
+        for (const [namespace, pods] of Object.entries(groupedPods)) {
+            totalPods += pods.length;
+
+            html += `
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-box"></i> ${namespace}
+                            <span class="badge bg-light text-dark float-end">${pods.length} Pods</span>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Pod名称</th>
+                                        <th>状态</th>
+                                        <th>就绪</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+            `;
+
+            pods.forEach(pod => {
+                const statusBadge = pod.status === 'Running' ? 'bg-success' : 'bg-warning';
+                const readyIcon = pod.ready ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle-fill text-danger"></i>';
+
+                html += `
+                    <tr>
+                        <td><code>${pod.name}</code></td>
+                        <td><span class="badge ${statusBadge}">${pod.status}</span></td>
+                        <td>${readyIcon}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickViewPodLogs('${namespace}', '${pod.name}')">
+                                <i class="bi bi-eye"></i> 查看日志
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    contentDiv.innerHTML = html;
+
+    // 更新统计信息
+    document.getElementById('ns-explorer-stats').textContent = `${nsCount} 个命名空间, 共 ${totalPods} 个Pods`;
+    document.getElementById('ns-explorer-result').style.display = 'block';
+}
+
+function quickViewPodLogs(namespace, pod) {
+    // 快速查看Pod日志（切换到单Pod查询视图并自动填充）
+    switchView('single-query');
+    document.getElementById('single-namespace-input').value = namespace;
+
+    // 模拟加载namespace
+    setTimeout(() => {
+        const select = document.getElementById('single-namespace-select');
+        select.innerHTML = `<option value="${namespace}" selected>${namespace}</option>`;
+        appState.currentNamespace = namespace;
+
+        // 模拟加载pod
+        setTimeout(() => {
+            const podSelect = document.getElementById('single-pod-select');
+            podSelect.innerHTML = `<option value="${pod}" selected>${pod}</option>`;
+        }, 100);
+    }, 100);
+}
+
+// ========== 错误上下文查询 ==========
+
+function initErrorContext() {
+    // 查询类型切换
+    document.getElementById('ec-query-type').addEventListener('change', function() {
+        const isDeployment = this.value === 'deployment';
+        document.getElementById('ec-deployment-group').style.display = isDeployment ? 'block' : 'none';
+        document.getElementById('ec-pod-group').style.display = isDeployment ? 'none' : 'block';
+    });
+
+    // 表单提交
+    document.getElementById('error-context-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        queryErrorContext();
+    });
+
+    // 清空结果
+    document.getElementById('clear-ec-result').addEventListener('click', function() {
+        document.getElementById('ec-result').style.display = 'none';
+    });
+}
+
+async function queryErrorContext() {
+    const namespace = document.getElementById('ec-namespace').value;
+    const queryType = document.getElementById('ec-query-type').value;
+    const deployment = document.getElementById('ec-deployment').value;
+    const pod = document.getElementById('ec-pod').value;
+    const keywordsStr = document.getElementById('ec-keywords').value;
+    const contextLines = parseInt(document.getElementById('ec-context-lines').value);
+    const logType = document.getElementById('ec-log-type').value;
+
+    if (!namespace) {
+        showToast('warning', '请输入namespace');
+        return;
+    }
+
+    if (queryType === 'deployment' && !deployment) {
+        showToast('warning', '请输入deployment名称');
+        return;
+    }
+
+    if (queryType === 'pod' && !pod) {
+        showToast('warning', '请输入pod名称');
+        return;
+    }
+
+    const keywords = keywordsStr ? keywordsStr.split(',').map(k => k.trim()).filter(k => k) : ['error', 'exception', 'fatal'];
+
+    // 显示加载状态
+    document.getElementById('ec-loading').style.display = 'block';
+    document.getElementById('ec-result').style.display = 'none';
+
+    try {
+        const requestBody = {
+            namespace,
+            error_keywords: keywords,
+            context_lines: contextLines,
+            type: logType
+        };
+
+        if (queryType === 'deployment') {
+            requestBody.deployment = deployment;
+        } else {
+            requestBody.pod = pod;
+        }
+
+        const response = await fetch(`${API_BASE}/logs/error-context`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            displayErrorContext(data);
+            showToast('success', `找到 ${data.pods_with_errors}/${data.total_pods} 个Pods有错误`);
+        } else {
+            showToast('error', `查询失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    } finally {
+        document.getElementById('ec-loading').style.display = 'none';
+    }
+}
+
+function displayErrorContext(data) {
+    const summaryEl = document.getElementById('ec-summary');
+    summaryEl.textContent = `查询了 ${data.total_pods} 个Pods, 发现 ${data.pods_with_errors} 个Pods有错误`;
+
+    const contentDiv = document.getElementById('ec-content');
+    let html = '';
+
+    if (data.pods_with_errors === 0) {
+        html = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> 太好了！未发现任何错误
+            </div>
+        `;
+    } else {
+        // 按Pod展示错误上下文
+        data.data.forEach((podResult, index) => {
+            html += `
+                <div class="card mb-3">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> ${podResult.namespace} / ${podResult.pod}
+                            <span class="badge bg-light text-dark float-end">
+                                ${podResult.total_error_count} 个错误
+                            </span>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+            `;
+
+            // Console错误
+            if (podResult.error_context.console_errors && podResult.error_context.console_errors.length > 0) {
+                html += `
+                    <h6 class="text-danger"><i class="bi bi-terminal"></i> Console日志错误 (${podResult.error_context.console_errors.length})</h6>
+                `;
+
+                podResult.error_context.console_errors.forEach((errorCtx, idx) => {
+                    html += displayErrorContextBlock(errorCtx, `console-${index}-${idx}`);
+                });
+            }
+
+            // 文件错误
+            if (podResult.error_context.file_errors) {
+                for (const [filepath, errors] of Object.entries(podResult.error_context.file_errors)) {
+                    if (errors.length > 0) {
+                        html += `
+                            <h6 class="text-danger mt-3"><i class="bi bi-file-text"></i> ${filepath} (${errors.length})</h6>
+                        `;
+
+                        errors.forEach((errorCtx, idx) => {
+                            html += displayErrorContextBlock(errorCtx, `file-${index}-${idx}`);
+                        });
+                    }
+                }
+            }
+
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    contentDiv.innerHTML = html;
+    document.getElementById('ec-result').style.display = 'block';
+}
+
+function displayErrorContextBlock(errorCtx, id) {
+    let html = `
+        <div class="error-context-block mb-3 p-3 border rounded">
+            <div class="mb-2">
+                <strong>错误行 #${errorCtx.line_number}:</strong>
+                <div class="log-viewer error-line">
+                    ${escapeHtml(errorCtx.error_line)}
+                </div>
+            </div>
+    `;
+
+    // 展开/收起按钮
+    html += `
+        <button class="btn btn-sm btn-outline-secondary mb-2" onclick="toggleContext('${id}')">
+            <i class="bi bi-arrows-expand"></i> 查看上下文 (前${errorCtx.before.length}行, 后${errorCtx.after.length}行)
+        </button>
+        <div id="context-${id}" class="context-content" style="display: none;">
+    `;
+
+    // 前置上下文
+    if (errorCtx.before.length > 0) {
+        html += `<div class="text-muted small">--- 前 ${errorCtx.before.length} 行 ---</div>`;
+        html += '<div class="log-viewer context-before">';
+        errorCtx.before.forEach((line, idx) => {
+            html += `<div class="log-line text-muted">${errorCtx.line_number - errorCtx.before.length + idx}: ${escapeHtml(line)}</div>`;
+        });
+        html += '</div>';
+    }
+
+    // 错误行 (重复显示高亮)
+    html += `
+        <div class="log-viewer error-highlight-block">
+            <div class="log-line text-danger fw-bold">
+                ${errorCtx.line_number}: ${escapeHtml(errorCtx.error_line)}
+            </div>
+        </div>
+    `;
+
+    // 后置上下文
+    if (errorCtx.after.length > 0) {
+        html += `<div class="text-muted small">--- 后 ${errorCtx.after.length} 行 ---</div>`;
+        html += '<div class="log-viewer context-after">';
+        errorCtx.after.forEach((line, idx) => {
+            html += `<div class="log-line text-muted">${errorCtx.line_number + idx + 1}: ${escapeHtml(line)}</div>`;
+        });
+        html += '</div>';
+    }
+
+    html += `
+        </div>
+        </div>
+    `;
+
+    return html;
+}
+
+function toggleContext(id) {
+    const element = document.getElementById(`context-${id}`);
+    if (element.style.display === 'none') {
+        element.style.display = 'block';
+    } else {
+        element.style.display = 'none';
     }
 }
 
