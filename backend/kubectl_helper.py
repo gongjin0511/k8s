@@ -9,6 +9,7 @@ import re
 import fnmatch
 from typing import List, Dict, Optional, Tuple
 import logging
+from cache_manager import cached
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

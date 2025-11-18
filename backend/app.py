@@ -5,6 +5,7 @@ K8s日志查询系统 - Flask API服务
 from flask import Flask, request, jsonify, send_file, send_from_directory, session
 from flask_cors import CORS
 from kubectl_helper import KubectlHelper
+from cache_manager import cache_manager
 from functools import wraps
 import os
 import json
@@ -129,24 +130,97 @@ def health_check():
     })
 
 
+@app.route('/api/cache/stats', methods=['GET'])
+@login_required
+def get_cache_stats():
+    """获取缓存统计信息"""
+    return jsonify({
+        'success': True,
+        'stats': cache_manager.get_stats()
+    })
+
+
+@app.route('/api/cache/clear', methods=['POST'])
+@login_required
+def clear_cache():
+    """清空所有缓存"""
+    try:
+        cache_type = request.json.get('type', 'all') if request.json else 'all'
+
+        if cache_type == 'all':
+            cache_manager.clear_all()
+            message = '所有缓存已清空'
+        elif cache_type == 'namespaces':
+            cache_manager.namespaces_cache.clear()
+            message = 'Namespace缓存已清空'
+        elif cache_type == 'deployments':
+            cache_manager.deployments_cache.clear()
+            message = 'Deployment缓存已清空'
+        elif cache_type == 'pods':
+            cache_manager.pods_cache.clear()
+            message = 'Pod缓存已清空'
+        elif cache_type == 'logs':
+            cache_manager.logs_cache.clear()
+            message = '日志缓存已清空'
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'无效的缓存类型: {cache_type}'
+            }), 400
+
+        logger.info(message)
+        return jsonify({
+            'success': True,
+            'message': message
+        })
+    except Exception as e:
+        logger.error(f"清空缓存失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/namespaces', methods=['GET'])
 @login_required
 def get_namespaces():
     """
-    获取namespace列表
+    获取namespace列表（带缓存）
     Query参数:
       - pattern: 通配符模式，多个用逗号分隔，如 erp-*,cnnc-*
+      - force_refresh: 强制刷新缓存（true/false）
     """
     try:
         pattern_str = request.args.get('pattern', '')
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
         patterns = [p.strip() for p in pattern_str.split(',') if p.strip()] if pattern_str else None
 
+        # 生成缓存键
+        cache_key = f"ns:{pattern_str}"
+
+        # 尝试从缓存获取
+        if not force_refresh:
+            cached_data = cache_manager.namespaces_cache.get(cache_key)
+            if cached_data is not None:
+                logger.info(f"缓存命中: {cache_key}")
+                return jsonify({
+                    'success': True,
+                    'data': cached_data,
+                    'count': len(cached_data),
+                    'from_cache': True
+                })
+
+        # 缓存未命中或强制刷新，查询K8s
         namespaces = kubectl.get_namespaces(patterns)
+
+        # 存入缓存
+        cache_manager.namespaces_cache.set(cache_key, namespaces)
 
         return jsonify({
             'success': True,
             'data': namespaces,
-            'count': len(namespaces)
+            'count': len(namespaces),
+            'from_cache': False
         })
     except Exception as e:
         logger.error(f"获取namespace失败: {str(e)}", exc_info=True)
@@ -160,10 +234,11 @@ def get_namespaces():
 @login_required
 def get_pods():
     """
-    获取pod列表
+    获取pod列表（带缓存）
     Query参数:
       - namespace: namespace名称 (必需)
       - status: 状态过滤，默认Running
+      - force_refresh: 强制刷新缓存（true/false）
     """
     try:
         namespace = request.args.get('namespace')
@@ -174,12 +249,34 @@ def get_pods():
             }), 400
 
         status = request.args.get('status', 'Running')
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+
+        # 生成缓存键
+        cache_key = f"pods:{namespace}:{status}"
+
+        # 尝试从缓存获取
+        if not force_refresh:
+            cached_data = cache_manager.pods_cache.get(cache_key)
+            if cached_data is not None:
+                logger.info(f"缓存命中: {cache_key}")
+                return jsonify({
+                    'success': True,
+                    'data': cached_data,
+                    'count': len(cached_data),
+                    'from_cache': True
+                })
+
+        # 缓存未命中或强制刷新
         pods = kubectl.get_pods(namespace, status_filter=status)
+
+        # 存入缓存
+        cache_manager.pods_cache.set(cache_key, pods)
 
         return jsonify({
             'success': True,
             'data': pods,
-            'count': len(pods)
+            'count': len(pods),
+            'from_cache': False
         })
     except Exception as e:
         logger.error(f"获取pods失败: {str(e)}", exc_info=True)
@@ -382,20 +479,42 @@ def download_logs():
 @login_required
 def get_pods_grouped():
     """
-    按命名空间分组获取Pods
+    按命名空间分组获取Pods（带缓存）
     Query参数:
       - pattern: 通配符模式，多个用逗号分隔
+      - force_refresh: 强制刷新缓存（true/false）
     """
     try:
         pattern_str = request.args.get('pattern', '')
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
         patterns = [p.strip() for p in pattern_str.split(',') if p.strip()] if pattern_str else None
 
+        # 生成缓存键
+        cache_key = f"pods_grouped:{pattern_str}"
+
+        # 尝试从缓存获取
+        if not force_refresh:
+            cached_data = cache_manager.pods_cache.get(cache_key)
+            if cached_data is not None:
+                logger.info(f"缓存命中: {cache_key}")
+                return jsonify({
+                    'success': True,
+                    'data': cached_data,
+                    'namespace_count': len(cached_data),
+                    'from_cache': True
+                })
+
+        # 缓存未命中或强制刷新
         grouped_pods = kubectl.get_pods_by_namespace_group(patterns)
+
+        # 存入缓存
+        cache_manager.pods_cache.set(cache_key, grouped_pods)
 
         return jsonify({
             'success': True,
             'data': grouped_pods,
-            'namespace_count': len(grouped_pods)
+            'namespace_count': len(grouped_pods),
+            'from_cache': False
         })
     except Exception as e:
         logger.error(f"获取分组pods失败: {str(e)}", exc_info=True)
@@ -409,9 +528,10 @@ def get_pods_grouped():
 @login_required
 def get_deployments():
     """
-    获取指定namespace的所有deployments和statefulsets
+    获取指定namespace的所有deployments和statefulsets（带缓存）
     Query参数:
       - namespace: 命名空间 (必需)
+      - force_refresh: 强制刷新缓存（true/false）
     """
     try:
         namespace = request.args.get('namespace')
@@ -421,12 +541,34 @@ def get_deployments():
                 'error': 'namespace参数必需'
             }), 400
 
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+
+        # 生成缓存键
+        cache_key = f"deployments:{namespace}"
+
+        # 尝试从缓存获取
+        if not force_refresh:
+            cached_data = cache_manager.deployments_cache.get(cache_key)
+            if cached_data is not None:
+                logger.info(f"缓存命中: {cache_key}")
+                return jsonify({
+                    'success': True,
+                    'data': cached_data,
+                    'count': len(cached_data),
+                    'from_cache': True
+                })
+
+        # 缓存未命中或强制刷新
         deployments = kubectl.get_deployments(namespace)
+
+        # 存入缓存
+        cache_manager.deployments_cache.set(cache_key, deployments)
 
         return jsonify({
             'success': True,
             'data': deployments,
-            'count': len(deployments)
+            'count': len(deployments),
+            'from_cache': False
         })
     except Exception as e:
         logger.error(f"获取deployments失败: {str(e)}", exc_info=True)
