@@ -4,12 +4,16 @@
 
 ## 功能特性
 
+- **命名空间浏览器**: 自动按命名空间组织展示所有Pods，无需手动选择
+- **错误上下文查询**: 查询最新错误及其前后50行上下文，精准定位问题
+- **部署单元查询**: 支持查询整个Deployment/StatefulSet的所有Pod日志
 - **单Pod查询**: 查询指定Pod的Console日志和文件日志
 - **批量查询**: 支持通配符批量查询多个namespace的日志
 - **关键字搜索**: 支持多关键字过滤和正则表达式匹配
 - **日志下载**: 将查询结果导出为ZIP文件
 - **统计分析**: 错误日志统计和Top Pod排行
 - **实时进度**: 批量查询时显示实时进度
+- **智能面板**: 自动加载和展示数据，减少手动操作
 - **友好界面**: 现代化的Web UI，响应式设计
 
 ## 技术架构
@@ -148,7 +152,57 @@ kubectl get ingress -n k8s-log-viewer
 
 ## 使用指南
 
-### 1. 单Pod查询
+### 1. 命名空间浏览器 (推荐)
+
+**最便捷的方式** - 自动加载和展示所有命名空间和Pods
+
+**操作步骤:**
+
+1. 打开"命名空间浏览器"页面
+2. 系统会自动加载所有命名空间和Pods
+3. 可选：输入namespace通配符进行过滤（如：`erp-*,cnnc-*`）
+4. 点击"加载/刷新"按钮
+5. 查看按命名空间分组的所有Pods
+6. 点击"查看日志"快速查询特定Pod
+
+**特点:**
+- 无需手动输入，自动组织展示
+- 清晰的命名空间分组
+- 实时显示Pod状态和就绪状态
+- 一键跳转到日志查询
+
+### 2. 错误上下文查询
+
+**快速定位错误** - 查询最新错误及其前后上下文
+
+**操作步骤:**
+
+1. 在"错误上下文查询"页面，输入namespace
+2. 选择查询方式：
+   - **整个部署单元**: 输入Deployment或StatefulSet名称，查询所有相关Pods
+   - **单个Pod**: 输入特定Pod名称
+3. 设置错误关键字（默认：error,exception,fatal）
+4. 设置上下文行数（默认前后各50行）
+5. 点击"查询错误上下文"
+6. 查看每个错误及其完整上下文
+
+**示例场景:**
+
+查询erp-service部署单元的所有错误及上下文：
+- Namespace: `erp-prod`
+- 查询方式: `整个部署单元`
+- Deployment: `erp-service`
+- 错误关键字: `NullPointerException,SQLException,timeout`
+- 上下文行数: `50`
+
+**特点:**
+- 自动查找最新错误
+- 显示错误前后50行完整上下文
+- 支持整个部署单元批量查询
+- 可展开/收起上下文，方便阅读
+- 错误行高亮显示
+
+### 3. 单Pod查询
 
 适用于查询特定Pod的日志。
 
@@ -260,6 +314,80 @@ Response:
   "success": true,
   "data": ["erp-prod", "erp-test", ...],
   "count": 10
+}
+```
+
+### 获取按命名空间分组的Pods (新增)
+
+```
+GET /api/pods/grouped?pattern=erp-*
+
+Response:
+{
+  "success": true,
+  "data": {
+    "erp-prod": [
+      {"name": "pod-1", "status": "Running", "ready": true},
+      ...
+    ],
+    "erp-test": [...]
+  },
+  "namespace_count": 2
+}
+```
+
+### 获取Deployment/StatefulSet的Pods (新增)
+
+```
+GET /api/deployment/pods?namespace=erp-prod&deployment=erp-service
+
+Response:
+{
+  "success": true,
+  "data": ["erp-service-xxx-1", "erp-service-xxx-2", ...],
+  "count": 3
+}
+```
+
+### 获取错误上下文 (新增)
+
+```
+POST /api/logs/error-context
+
+Body:
+{
+  "namespace": "erp-prod",
+  "deployment": "erp-service",  // 或使用 "pod": "pod-name"
+  "error_keywords": ["error", "exception"],
+  "context_lines": 50,
+  "type": "all"
+}
+
+Response:
+{
+  "success": true,
+  "data": [
+    {
+      "namespace": "erp-prod",
+      "pod": "pod-1",
+      "console_error_count": 5,
+      "file_error_count": 3,
+      "total_error_count": 8,
+      "error_context": {
+        "console_errors": [
+          {
+            "error_line": "ERROR: NullPointerException",
+            "line_number": 1234,
+            "before": ["line 1184", "line 1185", ...],
+            "after": ["line 1235", "line 1236", ...]
+          }
+        ],
+        "file_errors": {...}
+      }
+    }
+  ],
+  "total_pods": 3,
+  "pods_with_errors": 1
 }
 ```
 

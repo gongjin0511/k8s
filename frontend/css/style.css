@@ -1,28 +1,75 @@
 /* 全局样式 */
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f5f5f5;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+}
+
+/* 现代化导航栏 */
+.navbar-modern {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 16px 0;
+}
+
+.navbar-modern .navbar-brand {
+    font-weight: 700;
+    font-size: 1.5rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.navbar-modern .health-indicator {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 8px 16px;
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    font-size: 0.9em;
+}
+
+.navbar-modern .btn-outline-light {
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.navbar-modern .btn-outline-light:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 /* 侧边栏 */
 .sidebar {
     min-height: calc(100vh - 56px);
     padding-top: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08);
 }
 
 .sidebar .list-group-item {
     border: none;
-    border-radius: 0;
+    border-radius: 8px;
+    margin: 4px 12px;
     cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
 }
 
 .sidebar .list-group-item:hover {
-    background-color: #e9ecef;
+    background-color: #f0f4ff;
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
 }
 
 .sidebar .list-group-item.active {
-    background-color: #0d6efd;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.sidebar .list-group-item i {
+    margin-right: 8px;
 }
 
 /* 主内容区 */
@@ -244,9 +291,98 @@ select option:hover {
     color: #495057;
 }
 
-/* 卡片头部 */
+/* 现代化卡片样式 */
+.card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+
 .card-header {
     font-weight: 600;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-bottom: 2px solid rgba(102, 126, 234, 0.1);
+    border-radius: 16px 16px 0 0 !important;
+    padding: 16px 20px;
+}
+
+.card-body {
+    padding: 24px;
+}
+
+/* 现代化按钮样式 */
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+    border: none;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(255, 65, 108, 0.3);
+}
+
+.btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(255, 65, 108, 0.4);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    border: none;
+    font-weight: 600;
+    padding: 10px 24px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(17, 153, 142, 0.3);
+}
+
+.btn-success:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(17, 153, 142, 0.4);
+}
+
+.btn-secondary {
+    border-radius: 8px;
+    font-weight: 600;
+    padding: 10px 24px;
+    transition: all 0.3s ease;
+}
+
+/* 表单控件现代化 */
+.form-control,
+.form-select {
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: 10px 16px;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.15);
 }
 
 /* 统计数字 */
@@ -319,4 +455,61 @@ select option:hover {
 .section-divider {
     border-top: 2px solid #dee2e6;
     margin: 30px 0;
+}
+
+/* 错误上下文样式 */
+.error-context-block {
+    background-color: #fff3cd;
+    border-left: 4px solid #ff4444 !important;
+}
+
+.error-context-block .error-line {
+    background-color: #fff;
+    border-left: 3px solid #dc3545;
+    padding-left: 10px;
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.context-content {
+    margin-top: 10px;
+}
+
+.context-before,
+.context-after {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 5px 0;
+}
+
+.error-highlight-block {
+    background-color: #ffe6e6;
+    padding: 5px;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+/* 命名空间浏览器样式 */
+.ns-explorer-card {
+    transition: box-shadow 0.2s;
+}
+
+.ns-explorer-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Pod状态图标 */
+.pod-status-icon {
+    font-size: 1.2em;
+}
+
+/* 快速查看按钮 */
+.quick-view-btn {
+    font-size: 0.85em;
+}
+
+/* 上下文切换按钮 */
+.toggle-context-btn {
+    margin: 5px 0;
 }
