@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initBatchQuery();
     initDownload();
     initStats();
+    initFileBrowser();
     initLogout();
     checkHealth();
 
@@ -1286,6 +1287,436 @@ function displayStats(data) {
     });
 
     document.getElementById('stats-result').style.display = 'block';
+}
+
+// ========== 文件浏览器 ==========
+
+// 文件浏览器状态
+const fileBrowserState = {
+    currentNamespace: null,
+    currentPod: null,
+    files: [],
+    openTabs: [],
+    activeTabId: null,
+    tabCounter: 0
+};
+
+function initFileBrowser() {
+    // 加载命名空间按钮
+    const loadNsBtn = document.getElementById('fb-load-ns-btn');
+    if (loadNsBtn) {
+        loadNsBtn.addEventListener('click', loadFBNamespaces);
+    }
+
+    // Namespace选择变化
+    const nsSelect = document.getElementById('fb-namespace');
+    if (nsSelect) {
+        nsSelect.addEventListener('change', function() {
+            const namespace = this.value;
+            if (namespace) {
+                fileBrowserState.currentNamespace = namespace;
+                loadFBPods(namespace);
+            }
+        });
+    }
+
+    // Pod选择变化
+    const podSelect = document.getElementById('fb-pod');
+    if (podSelect) {
+        podSelect.addEventListener('change', function() {
+            fileBrowserState.currentPod = this.value;
+        });
+    }
+
+    // 加载文件列表按钮
+    const loadFilesBtn = document.getElementById('fb-load-files-btn');
+    if (loadFilesBtn) {
+        loadFilesBtn.addEventListener('click', loadFiles);
+    }
+
+    // 页面加载时自动加载命名空间
+    setTimeout(loadFBNamespaces, 500);
+}
+
+async function loadFBNamespaces() {
+    try {
+        const response = await apiFetch(`${API_BASE}/namespaces`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('fb-namespace');
+            select.innerHTML = '<option value="">-- 请选择Namespace --</option>' +
+                data.data.map(ns => `<option value="${ns}">${ns}</option>`).join('');
+            showToast('success', `加载了 ${data.count} 个命名空间`);
+        } else {
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
+}
+
+async function loadFBPods(namespace) {
+    try {
+        const response = await apiFetch(`${API_BASE}/pods?namespace=${encodeURIComponent(namespace)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const select = document.getElementById('fb-pod');
+            select.innerHTML = '<option value="">-- 请选择Pod --</option>' +
+                data.data.map(p => `<option value="${p.name}">${p.name} (${p.status})</option>`).join('');
+        } else {
+            showToast('error', `加载pods失败: ${data.error}`);
+        }
+    } catch (error) {
+        showToast('error', `请求失败: ${error.message}`);
+    }
+}
+
+async function loadFiles() {
+    const namespace = fileBrowserState.currentNamespace;
+    const pod = fileBrowserState.currentPod;
+
+    if (!namespace || !pod) {
+        showToast('warning', '请先选择Namespace和Pod');
+        return;
+    }
+
+    // 显示加载状态
+    const container = document.getElementById('fb-files-container');
+    container.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>';
+
+    try {
+        const response = await apiFetch(`${API_BASE}/logs/files?namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(pod)}`);
+        const data = await response.json();
+
+        if (data.success) {
+            fileBrowserState.files = data.data;
+            displayFileList(data.data);
+            document.getElementById('fb-file-count').textContent = data.count;
+            showToast('success', `找到 ${data.count} 个文件`);
+        } else {
+            container.innerHTML = `
+                <div class="alert alert-danger m-2">
+                    <i class="bi bi-exclamation-triangle"></i> ${data.error}
+                </div>
+            `;
+            showToast('error', `加载失败: ${data.error}`);
+        }
+    } catch (error) {
+        container.innerHTML = `
+            <div class="alert alert-danger m-2">
+                <i class="bi bi-exclamation-triangle"></i> ${error.message}
+            </div>
+        `;
+        showToast('error', `请求失败: ${error.message}`);
+    }
+}
+
+function displayFileList(files) {
+    const container = document.getElementById('fb-files-container');
+
+    if (!files || files.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <p>未找到日志文件</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="list-group list-group-flush">';
+
+    files.forEach(file => {
+        if (file.is_directory) {
+            // 目录
+            html += `
+                <div class="list-group-item">
+                    <i class="bi bi-folder-fill text-warning"></i>
+                    <strong>${escapeHtml(file.name)}/</strong>
+                </div>
+            `;
+        } else {
+            // 文件
+            const icon = getFileIcon(file.name);
+            html += `
+                <a href="#" class="list-group-item list-group-item-action" onclick="openFileInTab('${escapeHtml(file.name)}', '${escapeHtml(file.path)}'); return false;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="bi ${icon}"></i>
+                            <strong>${escapeHtml(file.name)}</strong>
+                        </div>
+                        <div class="text-muted small">
+                            ${file.size_human || ''}
+                            ${file.date ? '<br>' + file.date : ''}
+                        </div>
+                    </div>
+                </a>
+            `;
+        }
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function getFileIcon(filename) {
+    if (filename.endsWith('.log')) return 'bi-file-text text-primary';
+    if (filename.endsWith('.txt')) return 'bi-file-text text-secondary';
+    if (filename.endsWith('.gz')) return 'bi-file-zip text-warning';
+    if (filename.endsWith('.zip')) return 'bi-file-zip text-warning';
+    return 'bi-file-earmark text-muted';
+}
+
+function openFileInTab(fileName, filePath) {
+    const namespace = fileBrowserState.currentNamespace;
+    const pod = fileBrowserState.currentPod;
+
+    if (!namespace || !pod) {
+        showToast('error', '无效的namespace或pod');
+        return;
+    }
+
+    // 检查是否已打开
+    const existingTab = fileBrowserState.openTabs.find(t => t.filePath === filePath);
+    if (existingTab) {
+        switchTab(existingTab.id);
+        return;
+    }
+
+    // 创建新标签页
+    const tabId = `tab-${++fileBrowserState.tabCounter}`;
+    const tab = {
+        id: tabId,
+        fileName: fileName,
+        filePath: filePath,
+        namespace: namespace,
+        pod: pod
+    };
+
+    fileBrowserState.openTabs.push(tab);
+    createTabElement(tab);
+    switchTab(tabId);
+    loadFileContent(tab);
+}
+
+function createTabElement(tab) {
+    const tabsNav = document.getElementById('log-tabs');
+    const tabsContent = document.getElementById('log-tabs-content');
+
+    // 创建Tab导航
+    const tabNav = document.createElement('li');
+    tabNav.className = 'nav-item';
+    tabNav.setAttribute('role', 'presentation');
+    tabNav.innerHTML = `
+        <button class="nav-link" id="${tab.id}-tab" data-bs-toggle="tab" data-bs-target="#${tab.id}-pane"
+                type="button" role="tab" onclick="switchTab('${tab.id}')">
+            <i class="bi bi-file-text"></i> ${escapeHtml(tab.fileName)}
+            <button class="btn-close btn-close-white ms-2" onclick="closeTab('${tab.id}'); event.stopPropagation();" aria-label="Close"></button>
+        </button>
+    `;
+    tabsNav.appendChild(tabNav);
+
+    // 创建Tab内容
+    const tabPane = document.createElement('div');
+    tabPane.className = 'tab-pane fade';
+    tabPane.id = `${tab.id}-pane`;
+    tabPane.setAttribute('role', 'tabpanel');
+    tabPane.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
+            <div>
+                <strong>${escapeHtml(tab.namespace)} / ${escapeHtml(tab.pod)}</strong>
+                <span class="text-muted"> - ${escapeHtml(tab.filePath)}</span>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary" onclick="refreshTabContent('${tab.id}')">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+                <button class="btn btn-sm btn-outline-primary" onclick="downloadTabContent('${tab.id}')">
+                    <i class="bi bi-download"></i> 下载
+                </button>
+            </div>
+        </div>
+        <div id="${tab.id}-content" class="log-viewer" style="max-height: 600px; overflow-y: auto;">
+            <div class="text-center p-3">
+                <div class="spinner-border spinner-border-sm"></div> 加载中...
+            </div>
+        </div>
+        <div id="${tab.id}-pagination" class="mt-2"></div>
+    `;
+    tabsContent.appendChild(tabPane);
+
+    // 移除空状态提示
+    const emptyState = tabsContent.querySelector('.empty-state');
+    if (emptyState) {
+        emptyState.remove();
+    }
+}
+
+function switchTab(tabId) {
+    fileBrowserState.activeTabId = tabId;
+    const tabButton = document.getElementById(`${tabId}-tab`);
+    if (tabButton) {
+        const tab = new bootstrap.Tab(tabButton);
+        tab.show();
+    }
+}
+
+function closeTab(tabId) {
+    // 移除Tab数据
+    const index = fileBrowserState.openTabs.findIndex(t => t.id === tabId);
+    if (index !== -1) {
+        fileBrowserState.openTabs.splice(index, 1);
+    }
+
+    // 移除DOM元素
+    const tabNav = document.querySelector(`#${tabId}-tab`).parentElement;
+    const tabPane = document.getElementById(`${tabId}-pane`);
+
+    tabNav.remove();
+    tabPane.remove();
+
+    // 如果没有标签页了，显示空状态
+    if (fileBrowserState.openTabs.length === 0) {
+        const tabsContent = document.getElementById('log-tabs-content');
+        tabsContent.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <p>请从左侧选择文件查看</p>
+            </div>
+        `;
+        fileBrowserState.activeTabId = null;
+    } else {
+        // 切换到最后一个标签页
+        const lastTab = fileBrowserState.openTabs[fileBrowserState.openTabs.length - 1];
+        switchTab(lastTab.id);
+    }
+}
+
+async function loadFileContent(tab, offset = 0, limit = 1000) {
+    const contentDiv = document.getElementById(`${tab.id}-content`);
+    contentDiv.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>';
+
+    try {
+        const url = `${API_BASE}/logs/content?namespace=${encodeURIComponent(tab.namespace)}&pod=${encodeURIComponent(tab.pod)}&file_path=${encodeURIComponent(tab.filePath)}&offset=${offset}&limit=${limit}`;
+        const response = await apiFetch(url);
+        const data = await response.json();
+
+        if (data.success) {
+            displayFileContent(tab.id, data);
+        } else {
+            contentDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> 加载失败: ${data.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        contentDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> ${error.message}
+            </div>
+        `;
+    }
+}
+
+function displayFileContent(tabId, data) {
+    const contentDiv = document.getElementById(`${tabId}-content`);
+    const paginationDiv = document.getElementById(`${tabId}-pagination`);
+
+    if (!data.content || data.content.length === 0) {
+        contentDiv.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> 文件为空
+            </div>
+        `;
+        return;
+    }
+
+    // 显示日志内容
+    let html = '';
+    data.content.forEach((line, index) => {
+        const lineNum = data.offset + index + 1;
+        let highlighted = escapeHtml(line);
+
+        // 高亮ERROR
+        highlighted = highlighted.replace(/(ERROR|Exception|FATAL)/gi, '<span class="error-highlight">$1</span>');
+
+        // 高亮WARN
+        highlighted = highlighted.replace(/(WARN|WARNING)/gi, '<span class="warning-highlight">$1</span>');
+
+        html += `<div class="log-line">${lineNum}: ${highlighted}</div>`;
+    });
+
+    contentDiv.innerHTML = html;
+
+    // 显示分页
+    const currentPage = Math.floor(data.offset / data.limit) + 1;
+    const totalPages = Math.ceil(data.total_lines / data.limit);
+
+    let paginationHtml = `
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                第 ${data.offset + 1}-${data.offset + data.content.length} 行 / 共 ${data.total_lines} 行
+            </div>
+            <div>
+    `;
+
+    if (data.offset > 0) {
+        paginationHtml += `
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTabPage('${tabId}', ${data.offset - data.limit})">
+                <i class="bi bi-chevron-left"></i> 上一页
+            </button>
+        `;
+    }
+
+    paginationHtml += `
+        <span class="mx-2">第 ${currentPage} / ${totalPages} 页</span>
+    `;
+
+    if (data.has_more) {
+        paginationHtml += `
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTabPage('${tabId}', ${data.offset + data.limit})">
+                下一页 <i class="bi bi-chevron-right"></i>
+            </button>
+        `;
+    }
+
+    paginationHtml += `
+            </div>
+        </div>
+    `;
+
+    paginationDiv.innerHTML = paginationHtml;
+}
+
+function loadTabPage(tabId, offset) {
+    const tab = fileBrowserState.openTabs.find(t => t.id === tabId);
+    if (tab) {
+        loadFileContent(tab, offset);
+    }
+}
+
+function refreshTabContent(tabId) {
+    const tab = fileBrowserState.openTabs.find(t => t.id === tabId);
+    if (tab) {
+        loadFileContent(tab, 0);
+        showToast('success', '已刷新');
+    }
+}
+
+function downloadTabContent(tabId) {
+    const tab = fileBrowserState.openTabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    // 获取当前显示的内容
+    const contentDiv = document.getElementById(`${tabId}-content`);
+    const lines = Array.from(contentDiv.querySelectorAll('.log-line')).map(el => el.textContent);
+
+    const content = lines.join('\n');
+    downloadTextFile(content, tab.fileName);
+    showToast('success', '下载成功');
 }
 
 // ========== 工具函数 ==========
