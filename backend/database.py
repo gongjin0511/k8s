@@ -1,6 +1,7 @@
 """
 SQLite数据库管理模块
 提供日志索引、查询历史、书签等功能
+使用连接池优化性能
 """
 
 import sqlite3
@@ -9,29 +10,99 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from contextlib import contextmanager
+from queue import Queue, Empty
+from threading import Lock
 import os
 
 logger = logging.getLogger(__name__)
 
 
-class Database:
-    """SQLite数据库管理器"""
+class ConnectionPool:
+    """SQLite连接池"""
 
-    def __init__(self, db_path: str = 'k8s_logs.db'):
+    def __init__(self, db_path: str, pool_size: int = 10, timeout: int = 30):
         """
-        初始化数据库
+        初始化连接池
 
         Args:
             db_path: 数据库文件路径
+            pool_size: 连接池大小
+            timeout: 连接超时时间（秒）
         """
         self.db_path = db_path
-        self.init_database()
+        self.pool_size = pool_size
+        self.timeout = timeout
+        self._pool = Queue(maxsize=pool_size)
+        self._lock = Lock()
+        self._created_connections = 0
+
+        logger.info(f"初始化数据库连接池: 大小={pool_size}, 超时={timeout}秒")
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """创建新的数据库连接"""
+        conn = sqlite3.connect(self.db_path, timeout=self.timeout, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+
+        # 性能优化配置
+        conn.execute('PRAGMA journal_mode=WAL')  # Write-Ahead Logging
+        conn.execute('PRAGMA synchronous=NORMAL')  # 平衡性能和安全
+        conn.execute('PRAGMA cache_size=-10000')  # 10MB缓存
+        conn.execute('PRAGMA temp_store=MEMORY')  # 临时表使用内存
+        conn.execute('PRAGMA mmap_size=268435456')  # 256MB内存映射
+        conn.execute('PRAGMA foreign_keys=ON')  # 启用外键
+
+        self._created_connections += 1
+        logger.debug(f"创建数据库连接 #{self._created_connections}")
+
+        return conn
+
+    def get_connection(self) -> sqlite3.Connection:
+        """从连接池获取连接"""
+        try:
+            # 尝试从池中获取连接
+            conn = self._pool.get(block=False)
+            logger.debug("从连接池获取连接")
+            return conn
+        except Empty:
+            # 池为空，创建新连接
+            with self._lock:
+                if self._created_connections < self.pool_size:
+                    return self._create_connection()
+                else:
+                    # 达到连接池大小，阻塞等待
+                    logger.debug("连接池已满，等待可用连接...")
+                    return self._pool.get(block=True, timeout=self.timeout)
+
+    def return_connection(self, conn: sqlite3.Connection):
+        """归还连接到池"""
+        try:
+            self._pool.put(conn, block=False)
+            logger.debug("连接已归还到连接池")
+        except:
+            # 池已满，关闭连接
+            conn.close()
+            with self._lock:
+                self._created_connections -= 1
+            logger.debug("连接池已满，关闭多余连接")
+
+    def close_all(self):
+        """关闭所有连接"""
+        logger.info("正在关闭所有数据库连接...")
+        closed = 0
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get(block=False)
+                conn.close()
+                closed += 1
+            except Empty:
+                break
+
+        logger.info(f"已关闭 {closed} 个数据库连接")
 
     @contextmanager
-    def get_connection(self):
+    def get_connection_context(self):
         """获取数据库连接（上下文管理器）"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # 返回字典格式
+        conn = self.get_connection()
         try:
             yield conn
             conn.commit()
@@ -39,7 +110,34 @@ class Database:
             conn.rollback()
             raise e
         finally:
-            conn.close()
+            self.return_connection(conn)
+
+
+class Database:
+    """SQLite数据库管理器"""
+
+    def __init__(self, db_path: str = 'k8s_logs.db', pool_size: int = 10, timeout: int = 30):
+        """
+        初始化数据库
+
+        Args:
+            db_path: 数据库文件路径
+            pool_size: 连接池大小
+            timeout: 连接超时时间
+        """
+        self.db_path = db_path
+        self._pool = ConnectionPool(db_path, pool_size, timeout)
+
+        # 初始化数据库结构
+        self.init_database()
+
+        logger.info(f"数据库管理器初始化完成: {db_path}")
+
+    @contextmanager
+    def get_connection(self):
+        """获取数据库连接（上下文管理器）"""
+        with self._pool.get_connection_context() as conn:
+            yield conn
 
     def init_database(self):
         """初始化数据库表结构"""
