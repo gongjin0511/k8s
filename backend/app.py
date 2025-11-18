@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, send_file, send_from_directory, sessi
 from flask_cors import CORS
 from kubectl_helper import KubectlHelper
 from cache_manager import cache_manager
+from database import db
 from functools import wraps
 import os
 import json
@@ -759,6 +760,290 @@ def get_stats():
         })
     except Exception as e:
         logger.error(f"统计分析失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 文件管理API ====================
+
+@app.route('/api/logs/files', methods=['GET'])
+@login_required
+def list_log_files():
+    """
+    列出Pod中的所有日志文件
+    Query参数:
+      - namespace: 命名空间 (必需)
+      - pod: Pod名称 (必需)
+      - path: 日志目录路径（默认/applog/）
+    """
+    try:
+        namespace = request.args.get('namespace')
+        pod = request.args.get('pod')
+        log_path = request.args.get('path', '/applog/')
+
+        if not namespace or not pod:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和pod参数必需'
+            }), 400
+
+        # 列出文件
+        start_time = datetime.now()
+        files = kubectl.list_log_files(namespace, pod, log_path)
+        exec_time = (datetime.now() - start_time).total_seconds()
+
+        # 索引到数据库
+        if files:
+            db.index_log_files_batch(namespace, pod, files)
+
+        # 记录查询历史
+        db.add_query_history(
+            action='list_files',
+            namespace=namespace,
+            pod_name=pod,
+            parameters={'path': log_path},
+            result_count=len(files),
+            execution_time=exec_time
+        )
+
+        return jsonify({
+            'success': True,
+            'data': files,
+            'count': len(files),
+            'path': log_path
+        })
+    except Exception as e:
+        logger.error(f"列出日志文件失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logs/content', methods=['GET'])
+@login_required
+def get_log_content():
+    """
+    获取日志文件内容（分页）
+    Query参数:
+      - namespace: 命名空间 (必需)
+      - pod: Pod名称 (必需)
+      - file_path: 文件路径 (必需)
+      - offset: 起始行号（默认0）
+      - limit: 返回行数（默认1000）
+    """
+    try:
+        namespace = request.args.get('namespace')
+        pod = request.args.get('pod')
+        file_path = request.args.get('file_path')
+        offset = int(request.args.get('offset', 0))
+        limit = int(request.args.get('limit', 1000))
+
+        if not namespace or not pod or not file_path:
+            return jsonify({
+                'success': False,
+                'error': 'namespace、pod和file_path参数必需'
+            }), 400
+
+        # 限制单次返回行数
+        limit = min(limit, 10000)
+
+        # 获取文件内容
+        start_time = datetime.now()
+        result = kubectl.get_file_content(namespace, pod, file_path, offset, limit)
+        exec_time = (datetime.now() - start_time).total_seconds()
+
+        # 记录查询历史
+        db.add_query_history(
+            action='view_log',
+            namespace=namespace,
+            pod_name=pod,
+            file_path=file_path,
+            parameters={'offset': offset, 'limit': limit},
+            result_count=len(result.get('content', [])),
+            execution_time=exec_time
+        )
+
+        return jsonify({
+            'success': True,
+            'namespace': namespace,
+            'pod': pod,
+            'file_path': file_path,
+            **result
+        })
+    except Exception as e:
+        logger.error(f"获取日志内容失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logs/tail', methods=['GET'])
+@login_required
+def tail_log_file():
+    """
+    获取日志文件末尾内容
+    Query参数:
+      - namespace: 命名空间 (必需)
+      - pod: Pod名称 (必需)
+      - file_path: 文件路径 (必需)
+      - lines: 返回行数（默认100）
+    """
+    try:
+        namespace = request.args.get('namespace')
+        pod = request.args.get('pod')
+        file_path = request.args.get('file_path')
+        lines = int(request.args.get('lines', 100))
+
+        if not namespace or not pod or not file_path:
+            return jsonify({
+                'success': False,
+                'error': 'namespace、pod和file_path参数必需'
+            }), 400
+
+        # 限制行数
+        lines = min(lines, 10000)
+
+        # 获取tail内容
+        content = kubectl.tail_file(namespace, pod, file_path, lines)
+
+        return jsonify({
+            'success': True,
+            'namespace': namespace,
+            'pod': pod,
+            'file_path': file_path,
+            'content': content,
+            'lines': len(content)
+        })
+    except Exception as e:
+        logger.error(f"Tail日志失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logs/search', methods=['POST'])
+@login_required
+def search_in_log():
+    """
+    在日志文件中搜索关键词
+    Body参数:
+    {
+        "namespace": "erp-prod",
+        "pod": "pod-name",
+        "file_path": "/applog/root.log",
+        "pattern": "timeout.*database",
+        "max_results": 100
+    }
+    """
+    try:
+        data = request.get_json()
+
+        namespace = data.get('namespace')
+        pod = data.get('pod')
+        file_path = data.get('file_path')
+        pattern = data.get('pattern')
+
+        if not all([namespace, pod, file_path, pattern]):
+            return jsonify({
+                'success': False,
+                'error': 'namespace、pod、file_path和pattern参数必需'
+            }), 400
+
+        max_results = min(int(data.get('max_results', 100)), 1000)
+
+        # 搜索
+        start_time = datetime.now()
+        matches = kubectl.search_in_file(namespace, pod, file_path, pattern, max_results)
+        exec_time = (datetime.now() - start_time).total_seconds()
+
+        # 记录查询历史
+        db.add_query_history(
+            action='search',
+            namespace=namespace,
+            pod_name=pod,
+            file_path=file_path,
+            keywords=[pattern],
+            result_count=len(matches),
+            execution_time=exec_time
+        )
+
+        return jsonify({
+            'success': True,
+            'namespace': namespace,
+            'pod': pod,
+            'file_path': file_path,
+            'pattern': pattern,
+            'matches': matches,
+            'count': len(matches)
+        })
+    except Exception as e:
+        logger.error(f"搜索日志失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/logs/files/by-date', methods=['GET'])
+@login_required
+def get_files_by_date():
+    """
+    按日期范围获取日志文件（从数据库）
+    Query参数:
+      - namespace: 命名空间 (必需)
+      - pod: Pod名称 (必需)
+      - start_date: 开始日期 (如: 2025-01-10)
+      - end_date: 结束日期 (如: 2025-01-18)
+    """
+    try:
+        namespace = request.args.get('namespace')
+        pod = request.args.get('pod')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        if not namespace or not pod:
+            return jsonify({
+                'success': False,
+                'error': 'namespace和pod参数必需'
+            }), 400
+
+        # 从数据库获取文件列表
+        files = db.get_log_files(namespace, pod, start_date, end_date)
+
+        return jsonify({
+            'success': True,
+            'data': files,
+            'count': len(files),
+            'date_range': {
+                'start': start_date,
+                'end': end_date
+            }
+        })
+    except Exception as e:
+        logger.error(f"按日期获取文件失败: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/database/stats', methods=['GET'])
+@login_required
+def get_database_stats():
+    """获取数据库统计信息"""
+    try:
+        stats = db.get_database_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        logger.error(f"获取数据库统计失败: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
             'error': str(e)
